@@ -9,6 +9,51 @@ const typingAfterEl = document.getElementById("typing-after");
 const caretEl = document.getElementById("caret");
 const statusEl = document.getElementById("status");
 
+// Evitar que el área "committed" sea seleccionable con el ratón
+if (committedEl) {
+  // Previene que el navegador inicie una selección de texto dentro de #committed
+  committedEl.addEventListener("selectstart", (e) => e.preventDefault());
+
+  // mousedown en #committed está cubierto por el handler global en #page
+}
+
+// Si el usuario hace doble click en #committed, evitar la selección nativa
+// y en su lugar seleccionar la 'palabra actual' en el input (selección clara)
+if (committedEl) {
+  committedEl.addEventListener("dblclick", (e) => {
+    if (e.target && e.target.closest && e.target.closest("a")) return;
+    e.preventDefault();
+    input.focus();
+    // Seleccionar la palabra alrededor del caret actual en el input
+    const pos = input.selectionStart ?? input.value.length;
+    const before = input.value.slice(0, pos);
+    const after = input.value.slice(pos);
+    const start = before.lastIndexOf(" ") + 1;
+    let end = pos + after.indexOf(" ");
+    if (end < pos) end = input.value.length;
+    input.selectionStart = start;
+    input.selectionEnd = end;
+    updateDisplay();
+  });
+
+  // Si la selección nativa del documento incluye nodos dentro de #committed,
+  // limpiarla para evitar la selección "oscura" que no está ligada al input.
+  document.addEventListener("selectionchange", () => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (
+      committedEl.contains(range.startContainer) ||
+      committedEl.contains(range.endContainer)
+    ) {
+      sel.removeAllRanges();
+      // Mantener el foco en el input para que el usuario pueda seleccionar con el área clara
+      input.focus();
+      updateDisplay();
+    }
+  });
+}
+
 const TAB = "    ";
 let cursorOn = true;
 let guardadoEstaSesion = false;
@@ -53,11 +98,34 @@ function scrollToCaret() {
 
 function updateDisplay() {
   const value = input.value;
-  const pos = input.selectionStart ?? value.length;
-  typingBeforeEl.textContent = value.slice(0, pos);
-  typingAfterEl.textContent = value.slice(pos);
-  caretEl.style.opacity =
-    input === document.activeElement && cursorOn ? "1" : "0";
+  const start = input.selectionStart ?? value.length;
+  const end = input.selectionEnd ?? value.length;
+  const haySeleccion = start !== end;
+
+  if (haySeleccion) {
+    // Mostrar texto con la selección resaltada
+    typingBeforeEl.textContent = value.slice(0, start);
+
+    const selSpan = document.createElement("span");
+    selSpan.style.background = "#b4d5fe";
+    selSpan.style.color = "#111";
+    selSpan.textContent = value.slice(start, end);
+
+    // Limpiar y rearmar typing-before para incluir el span de selección
+    typingBeforeEl.innerHTML = "";
+    typingBeforeEl.appendChild(document.createTextNode(value.slice(0, start)));
+    typingBeforeEl.appendChild(selSpan);
+
+    typingAfterEl.textContent = value.slice(end);
+    caretEl.style.opacity = "0";
+  } else {
+    typingBeforeEl.innerHTML = "";
+    typingBeforeEl.appendChild(document.createTextNode(value.slice(0, start)));
+    typingAfterEl.textContent = value.slice(start);
+    caretEl.style.opacity =
+      input === document.activeElement && cursorOn ? "1" : "0";
+  }
+
   updateHeight();
   scrollToCaret();
 }
@@ -161,14 +229,26 @@ input.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
     const start = input.selectionStart;
-    input.value = input.value.slice(0, start) + "\n" + input.value.slice(start);
+    const end = input.selectionEnd;
+    input.value = input.value.slice(0, start) + "\n" + input.value.slice(end);
     input.selectionStart = input.selectionEnd = start + 1;
     updateDisplay();
   } else if (e.key === "Tab") {
     e.preventDefault();
     const start = input.selectionStart;
-    input.value = input.value.slice(0, start) + TAB + input.value.slice(start);
+    const end = input.selectionEnd;
+    input.value = input.value.slice(0, start) + TAB + input.value.slice(end);
     input.selectionStart = input.selectionEnd = start + TAB.length;
+    updateDisplay();
+  } else if (
+    (e.key === "Backspace" || e.key === "Delete") &&
+    input.selectionStart !== input.selectionEnd
+  ) {
+    e.preventDefault();
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    input.value = input.value.slice(0, start) + input.value.slice(end);
+    input.selectionStart = input.selectionEnd = start;
     updateDisplay();
   }
 });
@@ -179,6 +259,84 @@ input.addEventListener("select", updateDisplay);
 input.addEventListener("focus", updateDisplay);
 input.addEventListener("blur", () => {
   caretEl.style.opacity = "0";
+});
+
+// Selección con mouse sobre el área de texto visible
+const editorEl = document.getElementById("editor");
+let mouseSelStart = null;
+
+function posicionEnTexto(x, y) {
+  // Usa caretPositionFromPoint o caretRangeFromPoint para obtener el nodo y offset
+  let node, offset;
+  if (document.caretPositionFromPoint) {
+    const pos = document.caretPositionFromPoint(x, y);
+    if (!pos) return null;
+    node = pos.offsetNode;
+    offset = pos.offset;
+  } else if (document.caretRangeFromPoint) {
+    const range = document.caretRangeFromPoint(x, y);
+    if (!range) return null;
+    node = range.startContainer;
+    offset = range.startOffset;
+  } else {
+    return null;
+  }
+
+  // Calcular el índice global sumando los nodos de texto anteriores dentro de #editor
+  let index = 0;
+  const walker = document.createTreeWalker(editorEl, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const current = walker.currentNode;
+    if (current === node) {
+      index += offset;
+      return index;
+    }
+    index += current.textContent.length;
+  }
+  return index;
+}
+
+const pageEl = document.getElementById("page");
+
+pageEl.addEventListener("mousedown", (e) => {
+  if (e.target && e.target.closest && e.target.closest("a")) return;
+  e.preventDefault();
+
+  const dentroDeEditor = e.target.closest("#editor");
+  if (!dentroDeEditor) {
+    mouseSelStart = null;
+    input.focus();
+    return;
+  }
+
+  // posicionEnTexto usa editorEl como raíz, así que el índice ya es local al input.value
+  const idx = posicionEnTexto(e.clientX, e.clientY);
+  if (idx === null) {
+    input.focus();
+    return;
+  }
+
+  mouseSelStart = idx;
+  input.selectionStart = idx;
+  input.selectionEnd = idx;
+  input.focus();
+  updateDisplay();
+});
+
+pageEl.addEventListener("mousemove", (e) => {
+  if (mouseSelStart === null) return;
+  if (!e.target.closest || !e.target.closest("#editor")) return;
+  const idx = posicionEnTexto(e.clientX, e.clientY);
+  if (idx === null) return;
+  const start = Math.min(mouseSelStart, idx);
+  const end = Math.max(mouseSelStart, idx);
+  input.selectionStart = start;
+  input.selectionEnd = end;
+  updateDisplay();
+});
+
+document.addEventListener("mouseup", () => {
+  mouseSelStart = null;
 });
 
 input.addEventListener("paste", (e) => {

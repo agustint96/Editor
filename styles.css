@@ -62,6 +62,8 @@ body {
   outline: none;
   caret-color: transparent;
   min-width: 1ch;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #hidden-input {
