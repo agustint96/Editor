@@ -2,145 +2,79 @@ const SUPABASE_URL = "https://iypxmjxmhlkhkiwadann.supabase.co";
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5cHhtanhtaGxraGtpd2FkYW5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMjk4NTcsImV4cCI6MjA5NjcwNTg1N30.nEahrHZdBETYGRFNtkAKHT8Tig_0crHa5PA9gQ0PVXE";
 
-const input = document.getElementById("hidden-input");
 const committedEl = document.getElementById("committed");
-const typingBeforeEl = document.getElementById("typing-before");
-const typingAfterEl = document.getElementById("typing-after");
-const caretEl = document.getElementById("caret");
+const editor = document.getElementById("editor");
 const statusEl = document.getElementById("status");
 
-// Evitar que el área "committed" sea seleccionable con el ratón
-if (committedEl) {
-  // Previene que el navegador inicie una selección de texto dentro de #committed
-  committedEl.addEventListener("selectstart", (e) => e.preventDefault());
-
-  // mousedown en #committed está cubierto por el handler global en #page
-}
-
-// Si el usuario hace doble click en #committed, evitar la selección nativa
-// y en su lugar seleccionar la 'palabra actual' en el input (selección clara)
-if (committedEl) {
-  committedEl.addEventListener("dblclick", (e) => {
-    if (e.target && e.target.closest && e.target.closest("a")) return;
-    e.preventDefault();
-    input.focus();
-    // Seleccionar la palabra alrededor del caret actual en el input
-    const pos = input.selectionStart ?? input.value.length;
-    const before = input.value.slice(0, pos);
-    const after = input.value.slice(pos);
-    const start = before.lastIndexOf(" ") + 1;
-    let end = pos + after.indexOf(" ");
-    if (end < pos) end = input.value.length;
-    input.selectionStart = start;
-    input.selectionEnd = end;
-    updateDisplay();
-  });
-
-  // Si la selección nativa del documento incluye nodos dentro de #committed,
-  // limpiarla para evitar la selección "oscura" que no está ligada al input.
-  document.addEventListener("selectionchange", () => {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
-    if (
-      committedEl.contains(range.startContainer) ||
-      committedEl.contains(range.endContainer)
-    ) {
-      sel.removeAllRanges();
-      // Mantener el foco en el input para que el usuario pueda seleccionar con el área clara
-      input.focus();
-      updateDisplay();
-    }
-  });
-}
-
 const TAB = "    ";
-let cursorOn = true;
 let guardadoEstaSesion = false;
 
 const colorAnterior = localStorage.getItem("ultimo_color");
 const colorSesion = colorAnterior === "#000" ? "#000" : "#000";
 
-function focusInput(e) {
-  // Si el usuario está seleccionando texto, no robar el foco
-  const sel = window.getSelection();
-  if (sel && sel.toString().length > 0) return;
+const LOCAL_MESSAGES_KEY = "naim_editor_messages";
 
-  // Si el click fue directamente sobre texto comprometido, no robar el foco
-  // para permitir selección y copia
-  if (e && e.target && e.target.closest("#committed")) return;
+function saveLocalMessages(rows) {
+  try {
+    localStorage.setItem(LOCAL_MESSAGES_KEY, JSON.stringify(rows));
+  } catch (error) {
+    console.warn("No se pudo guardar cache local:", error);
+  }
+}
 
-  input.focus();
+function loadLocalMessages() {
+  try {
+    const raw = localStorage.getItem(LOCAL_MESSAGES_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn("No se pudo leer cache local:", error);
+    return [];
+  }
+}
+
+function focusEditor(e) {
+  const target = e && e.target;
+  if (
+    target &&
+    (target.closest("#btn-desktop") ||
+      target.closest("#btn-mobile") ||
+      target.closest("a"))
+  ) {
+    return;
+  }
+  if (target && target.closest && target.closest("#committed")) return;
+  editor.focus();
+}
+
+function getEditorText() {
+  return editor.innerText.replace(/\u00A0/g, " ");
+}
+
+function setEditorText(text) {
+  editor.innerText = text;
 }
 
 function updateHeight() {
-  const editor = document.getElementById("page");
-  document.body.style.minHeight = editor.offsetHeight + 120 + "px";
+  const editorPage = document.getElementById("page");
+  document.body.style.minHeight = editorPage.offsetHeight + 120 + "px";
 }
 
 function scrollToCaret() {
-  // Esperar un frame para que el DOM se actualice antes de medir
   requestAnimationFrame(() => {
-    const rect = caretEl.getBoundingClientRect();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
     const vvh = window.visualViewport
       ? window.visualViewport.height
       : window.innerHeight;
     const margin = 100;
     if (rect.bottom > vvh - margin) {
       const extra = rect.bottom - (vvh - margin);
-      window.scrollTo({
-        top: window.scrollY + extra,
-        behavior: "smooth",
-      });
+      window.scrollTo({ top: window.scrollY + extra, behavior: "smooth" });
     }
   });
 }
-
-function updateDisplay() {
-  const value = input.value;
-  const start = input.selectionStart ?? value.length;
-  const end = input.selectionEnd ?? value.length;
-  const haySeleccion = start !== end;
-
-  if (haySeleccion) {
-    // Mostrar texto con la selección resaltada
-    typingBeforeEl.textContent = value.slice(0, start);
-
-    const selSpan = document.createElement("span");
-    selSpan.style.background = "#b4d5fe";
-    selSpan.style.color = "#111";
-    selSpan.textContent = value.slice(start, end);
-
-    // Limpiar y rearmar typing-before para incluir el span de selección
-    typingBeforeEl.innerHTML = "";
-    typingBeforeEl.appendChild(document.createTextNode(value.slice(0, start)));
-    typingBeforeEl.appendChild(selSpan);
-
-    typingAfterEl.textContent = value.slice(end);
-    caretEl.style.opacity = "0";
-  } else {
-    typingBeforeEl.innerHTML = "";
-    typingBeforeEl.appendChild(document.createTextNode(value.slice(0, start)));
-    typingAfterEl.textContent = value.slice(start);
-    caretEl.style.opacity =
-      input === document.activeElement && cursorOn ? "1" : "0";
-  }
-
-  updateHeight();
-  scrollToCaret();
-}
-
-// Cuando el teclado virtual sube/baja en móvil
-if (window.visualViewport) {
-  window.visualViewport.addEventListener("resize", scrollToCaret);
-  window.visualViewport.addEventListener("scroll", scrollToCaret);
-}
-
-setInterval(() => {
-  cursorOn = !cursorOn;
-  caretEl.style.opacity =
-    input === document.activeElement && cursorOn ? "1" : "0";
-}, 500);
 
 function setStatus(msg, color) {
   statusEl.textContent = msg;
@@ -198,6 +132,11 @@ async function guardar(mensaje) {
       const id = rows?.[0]?.id;
       if (id && id > ultimoId) ultimoId = id;
       agregarSpan(colorSesion, mensaje);
+      const localRows = loadLocalMessages();
+      if (id && !localRows.some((item) => item.id === id)) {
+        localRows.push({ id, mensaje, color: colorSesion });
+        saveLocalMessages(localRows);
+      }
       setStatus("✓ guardado", "#4caf50");
       if (!guardadoEstaSesion) {
         guardadoEstaSesion = true;
@@ -209,147 +148,51 @@ async function guardar(mensaje) {
       console.error(txt);
     }
   } catch (e) {
-    setStatus("✗ sin conexión", "#e53935");
+    setStatus("✗ sin conexión. El mensaje se guarda localmente.", "#e53935");
+    const localRows = loadLocalMessages();
+    localRows.push({ id: Date.now(), mensaje, color: colorSesion });
+    saveLocalMessages(localRows);
+    agregarSpan(colorSesion, mensaje);
     console.error(e);
   }
 }
 
+function insertTextAtCursor(text) {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+  const node = document.createTextNode(text);
+  range.insertNode(node);
+  range.setStartAfter(node);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+  updateHeight();
+  scrollToCaret();
+}
+
 async function confirmar() {
-  const mensaje = input.value;
+  const mensaje = getEditorText();
   if (!mensaje.trim()) return;
-  input.value = "";
-  updateDisplay();
+  setEditorText("");
+  updateHeight();
   await polling();
   guardar(mensaje);
 }
 
-input.addEventListener("input", updateDisplay);
+editor.addEventListener("input", () => {
+  updateHeight();
+  scrollToCaret();
+});
 
-input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
+editor.addEventListener("keydown", (e) => {
+  if (e.key === "Tab") {
     e.preventDefault();
-    const start = input.selectionStart;
-    const end = input.selectionEnd;
-    input.value = input.value.slice(0, start) + "\n" + input.value.slice(end);
-    input.selectionStart = input.selectionEnd = start + 1;
-    updateDisplay();
-  } else if (e.key === "Tab") {
-    e.preventDefault();
-    const start = input.selectionStart;
-    const end = input.selectionEnd;
-    input.value = input.value.slice(0, start) + TAB + input.value.slice(end);
-    input.selectionStart = input.selectionEnd = start + TAB.length;
-    updateDisplay();
-  } else if (
-    (e.key === "Backspace" || e.key === "Delete") &&
-    input.selectionStart !== input.selectionEnd
-  ) {
-    e.preventDefault();
-    const start = input.selectionStart;
-    const end = input.selectionEnd;
-    input.value = input.value.slice(0, start) + input.value.slice(end);
-    input.selectionStart = input.selectionEnd = start;
-    updateDisplay();
+    insertTextAtCursor(TAB);
   }
 });
 
-input.addEventListener("click", updateDisplay);
-input.addEventListener("keyup", updateDisplay);
-input.addEventListener("select", updateDisplay);
-input.addEventListener("focus", updateDisplay);
-input.addEventListener("blur", () => {
-  caretEl.style.opacity = "0";
-});
-
-// Selección con mouse sobre el área de texto visible
-const editorEl = document.getElementById("editor");
-let mouseSelStart = null;
-
-function posicionEnTexto(x, y) {
-  // Usa caretPositionFromPoint o caretRangeFromPoint para obtener el nodo y offset
-  let node, offset;
-  if (document.caretPositionFromPoint) {
-    const pos = document.caretPositionFromPoint(x, y);
-    if (!pos) return null;
-    node = pos.offsetNode;
-    offset = pos.offset;
-  } else if (document.caretRangeFromPoint) {
-    const range = document.caretRangeFromPoint(x, y);
-    if (!range) return null;
-    node = range.startContainer;
-    offset = range.startOffset;
-  } else {
-    return null;
-  }
-
-  // Calcular el índice global sumando los nodos de texto anteriores dentro de #editor
-  let index = 0;
-  const walker = document.createTreeWalker(editorEl, NodeFilter.SHOW_TEXT);
-  while (walker.nextNode()) {
-    const current = walker.currentNode;
-    if (current === node) {
-      index += offset;
-      return index;
-    }
-    index += current.textContent.length;
-  }
-  return index;
-}
-
-const pageEl = document.getElementById("page");
-
-pageEl.addEventListener("mousedown", (e) => {
-  if (e.target && e.target.closest && e.target.closest("a")) return;
-  e.preventDefault();
-
-  const dentroDeEditor = e.target.closest("#editor");
-  if (!dentroDeEditor) {
-    mouseSelStart = null;
-    input.focus();
-    return;
-  }
-
-  // posicionEnTexto usa editorEl como raíz, así que el índice ya es local al input.value
-  const idx = posicionEnTexto(e.clientX, e.clientY);
-  if (idx === null) {
-    input.focus();
-    return;
-  }
-
-  mouseSelStart = idx;
-  input.selectionStart = idx;
-  input.selectionEnd = idx;
-  input.focus();
-  updateDisplay();
-});
-
-pageEl.addEventListener("mousemove", (e) => {
-  if (mouseSelStart === null) return;
-  if (!e.target.closest || !e.target.closest("#editor")) return;
-  const idx = posicionEnTexto(e.clientX, e.clientY);
-  if (idx === null) return;
-  const start = Math.min(mouseSelStart, idx);
-  const end = Math.max(mouseSelStart, idx);
-  input.selectionStart = start;
-  input.selectionEnd = end;
-  updateDisplay();
-});
-
-document.addEventListener("mouseup", () => {
-  mouseSelStart = null;
-});
-
-input.addEventListener("paste", (e) => {
-  e.preventDefault();
-  const text = e.clipboardData.getData("text/plain");
-  const start = input.selectionStart;
-  input.value =
-    input.value.slice(0, start) + text + input.value.slice(input.selectionEnd);
-  input.selectionStart = input.selectionEnd = start + text.length;
-  updateDisplay();
-});
-
-// Último id que ya tenemos renderizado
 let ultimoId = 0;
 
 function estaAlFinal() {
@@ -376,21 +219,35 @@ async function cargar() {
         agregarSpan(r.color || "#000", r.mensaje);
         if (r.id > ultimoId) ultimoId = r.id;
       });
+      saveLocalMessages(rows);
       setStatus("", "");
       requestAnimationFrame(() => {
         window.scrollTo({
           top: document.body.scrollHeight,
           behavior: "instant",
         });
-        focusInput();
+        editor.focus();
       });
     } else {
       const txt = await res.text();
       setStatus("✗ error al cargar: " + txt, "#e53935");
     }
   } catch (e) {
-    setStatus("✗ sin conexión al cargar", "#e53935");
     console.error(e);
+    const localRows = loadLocalMessages();
+    if (localRows.length > 0) {
+      committedEl.innerHTML = "";
+      ultimoId = 0;
+      localRows.forEach((r) => {
+        agregarSpan(r.color || "#000", r.mensaje);
+        if (r.id && r.id > ultimoId) ultimoId = r.id;
+      });
+      setStatus("Offline. Mostrando caché local.", "#e53935");
+    } else {
+      setStatus("✗ sin conexión. No hay datos locales.", "#e53935");
+    }
+    editor.focus();
+    updateHeight();
   }
 }
 
@@ -414,7 +271,6 @@ async function polling() {
           agregarSpan(r.color || "#000", r.mensaje);
           if (r.id > ultimoId) ultimoId = r.id;
         });
-        // Solo hacer scroll si ya estabas al final
         if (alFinal) {
           requestAnimationFrame(() => {
             window.scrollTo({
@@ -426,14 +282,12 @@ async function polling() {
       }
     }
   } catch (e) {
-    // Silencioso para no interrumpir al usuario
     console.error("polling error:", e);
   }
 }
 
-focusInput();
-updateDisplay();
+focusEditor();
+updateHeight();
 cargar().then(() => {
-  // Arrancar polling cada 5 segundos una vez que cargó todo
   setInterval(polling, 5000);
 });

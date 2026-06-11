@@ -51,50 +51,18 @@ body {
   color: #1558b0;
 }
 
-/* El área donde el usuario escribe - texto renderizado visible */
+/* El área donde el usuario escribe - editor nativo contenteditable */
 #editor {
   display: inline;
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 15px;
   line-height: 1.7;
-  color: #888;
+  color: #111;
   outline: none;
-  caret-color: transparent;
   min-width: 1ch;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-#hidden-input {
-  position: fixed;
-  opacity: 0;
-  width: 1px;
-  height: 1px;
-  top: 0;
-  left: 0;
-  border: none;
-  padding: 0;
-  margin: 0;
-  resize: none;
-  overflow: hidden;
-  background: transparent;
-  color: transparent;
-  caret-color: transparent;
-}
-
-/* Cursor real como elemento inline */
-#caret {
-  display: inline-block;
-  width: 1px;
-  height: 1.2em;
-  background: #111;
-  margin-left: 1px;
-  vertical-align: -0.15em;
-  border-radius: 0;
-  animation: blink 1s step-start infinite;
-  pointer-events: none;
-  user-select: none;
+  vertical-align: top;
+  caret-color: auto;
 }
 
 @keyframes blink {

@@ -9,13 +9,9 @@
     <title>Editor</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body onclick="focusInput(event)">
+  <body onclick="focusEditor(event)">
     <div id="page">
-      <span id="committed"></span
-      ><span id="editor"
-        ><span id="typing-before"></span><span id="caret"></span
-        ><span id="typing-after"></span
-      ></span>
+      <span id="committed" contenteditable="false"></span><span id="editor" contenteditable="true" spellcheck="false"></span>
     </div>
 
     <div id="status"></div>
@@ -25,14 +21,6 @@
     </button>
 
     <button id="btn-mobile" onclick="confirmar()">Guardar</button>
-
-    <textarea
-      id="hidden-input"
-      autocomplete="off"
-      autocorrect="off"
-      autocapitalize="off"
-      spellcheck="false"
-    ></textarea>
 
     <script src="app.js"></script>
   </body>
