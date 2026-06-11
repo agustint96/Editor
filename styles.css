@@ -13,6 +13,7 @@ body {
 #page {
   position: relative;
   min-height: 100dvh;
+  width: 100%;
   padding: 1.4rem;
   padding-bottom: 6rem;
   cursor: text;
@@ -25,10 +26,29 @@ body {
   word-break: break-word;
   font-size: 15px;
   line-height: 1.7;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 #committed .msg {
   display: inline;
+}
+
+#committed .msg a {
+  color: #1a73e8;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+#committed .msg a:visited {
+  color: #7b1fa2;
+}
+
+#committed .msg a:hover {
+  color: #1558b0;
 }
 
 /* El área donde el usuario escribe - texto renderizado visible */
@@ -154,11 +174,154 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-@media (max-width: 600px) {
+/* =========================
+   CELULARES (por defecto)
+   0px - 767px
+========================= */
+
+#page {
+  padding: 1rem;
+  padding-bottom: 6rem;
+}
+
+#committed,
+#editor {
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+#btn-desktop {
+  display: none;
+}
+
+#btn-mobile {
+  display: block;
+}
+
+#status {
+  left: 1rem;
+  font-size: 11px;
+}
+
+/* =========================
+   TABLETS
+   768px - 1023px
+========================= */
+
+@media (min-width: 768px) {
+  #page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 1.8rem;
+    padding-bottom: 6rem;
+  }
+
+  #committed,
+  #editor {
+    font-size: 16px;
+    line-height: 1.75;
+  }
+
   #btn-desktop {
+    display: flex;
+  }
+
+  #btn-mobile {
     display: none;
   }
-  #btn-mobile {
-    display: block;
+
+  #status {
+    left: calc(50% - 360px);
+    font-size: 12px;
+  }
+}
+
+/* =========================
+   NOTEBOOKS / DESKTOP
+   1024px - 1439px
+========================= */
+
+@media (min-width: 1024px) {
+  #page {
+    max-width: 960px;
+    padding: 2.2rem;
+    padding-bottom: 7rem;
+  }
+
+  #committed,
+  #editor {
+    font-size: 16px;
+    line-height: 1.8;
+  }
+
+  #btn-desktop {
+    padding: 0.6rem 1.8rem;
+    font-size: 13px;
+  }
+
+  #status {
+    left: calc(50% - 480px);
+  }
+}
+
+/* =========================
+   DESKTOP GRANDE
+   1440px - 1919px
+========================= */
+
+@media (min-width: 1440px) {
+  #page {
+    max-width: 1280px;
+    padding: 2.6rem;
+    padding-bottom: 7rem;
+  }
+
+  #committed,
+  #editor {
+    font-size: 17px;
+    line-height: 1.85;
+  }
+
+  #btn-desktop {
+    padding: 0.65rem 2rem;
+    font-size: 14px;
+    border-radius: 14px;
+  }
+
+  #status {
+    left: calc(50% - 640px);
+    font-size: 13px;
+  }
+}
+
+/* =========================
+   ULTRAWIDE / 2K / 4K
+   1920px+
+========================= */
+
+@media (min-width: 1920px) {
+  #page {
+    max-width: 1600px;
+    padding: 3rem;
+    padding-bottom: 8rem;
+  }
+
+  #committed,
+  #editor {
+    font-size: 18px;
+    line-height: 1.9;
+  }
+
+  #btn-desktop {
+    padding: 0.7rem 2.2rem;
+    font-size: 15px;
+    border-radius: 16px;
+    bottom: 3rem;
+  }
+
+  #status {
+    left: calc(50% - 800px);
+    font-size: 13px;
+    bottom: 1.4rem;
   }
 }

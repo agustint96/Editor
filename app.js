@@ -16,7 +16,15 @@ let guardadoEstaSesion = false;
 const colorAnterior = localStorage.getItem("ultimo_color");
 const colorSesion = colorAnterior === "#000" ? "#000" : "#000";
 
-function focusInput() {
+function focusInput(e) {
+  // Si el usuario está seleccionando texto, no robar el foco
+  const sel = window.getSelection();
+  if (sel && sel.toString().length > 0) return;
+
+  // Si el click fue directamente sobre texto comprometido, no robar el foco
+  // para permitir selección y copia
+  if (e && e.target && e.target.closest("#committed")) return;
+
   input.focus();
 }
 
@@ -75,11 +83,30 @@ function setStatus(msg, color) {
     }, 3000);
 }
 
+const URL_REGEX = /(https?:\/\/[^\s]+)/g;
+
+function renderConLinks(container, texto) {
+  const partes = texto.split(URL_REGEX);
+  partes.forEach((parte) => {
+    URL_REGEX.lastIndex = 0;
+    if (URL_REGEX.test(parte)) {
+      const a = document.createElement("a");
+      a.href = parte;
+      a.textContent = parte;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      container.appendChild(a);
+    } else {
+      container.appendChild(document.createTextNode(parte));
+    }
+  });
+}
+
 function agregarSpan(color, mensaje) {
   const span = document.createElement("span");
   span.className = "msg";
   span.style.color = color;
-  span.textContent = mensaje;
+  renderConLinks(span, mensaje);
   committedEl.appendChild(span);
 }
 
@@ -130,15 +157,13 @@ input.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
     const start = input.selectionStart;
-    input.value =
-      input.value.slice(0, start) + "\n" + input.value.slice(start);
+    input.value = input.value.slice(0, start) + "\n" + input.value.slice(start);
     input.selectionStart = input.selectionEnd = start + 1;
     updateDisplay();
   } else if (e.key === "Tab") {
     e.preventDefault();
     const start = input.selectionStart;
-    input.value =
-      input.value.slice(0, start) + TAB + input.value.slice(start);
+    input.value = input.value.slice(0, start) + TAB + input.value.slice(start);
     input.selectionStart = input.selectionEnd = start + TAB.length;
     updateDisplay();
   }
@@ -157,9 +182,7 @@ input.addEventListener("paste", (e) => {
   const text = e.clipboardData.getData("text/plain");
   const start = input.selectionStart;
   input.value =
-    input.value.slice(0, start) +
-    text +
-    input.value.slice(input.selectionEnd);
+    input.value.slice(0, start) + text + input.value.slice(input.selectionEnd);
   input.selectionStart = input.selectionEnd = start + text.length;
   updateDisplay();
 });
@@ -168,8 +191,7 @@ async function cargar() {
   setStatus("cargando...", "#aaa");
   try {
     const res = await fetch(
-      SUPABASE_URL +
-        "/rest/v1/notas?select=id,mensaje,color&order=id.asc",
+      SUPABASE_URL + "/rest/v1/notas?select=id,mensaje,color&order=id.asc",
       {
         headers: {
           apikey: SUPABASE_KEY,
