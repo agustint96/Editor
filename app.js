@@ -105,16 +105,187 @@ function setStatus(msg, color) {
 
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
 
+function getEmbedInfo(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace("www.", "");
+
+    // YouTube
+    const ytMatch = url.match(
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+    );
+    if (ytMatch)
+      return {
+        type: "iframe",
+        src: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1`,
+        w: 560,
+        h: 315,
+      };
+
+    // Vimeo
+    const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+    if (vimeoMatch)
+      return {
+        type: "iframe",
+        src: `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1`,
+        w: 560,
+        h: 315,
+      };
+
+    // Spotify
+    if (host === "open.spotify.com") {
+      const path = u.pathname;
+      const src = `https://open.spotify.com/embed${path}`;
+      const isTrack = path.startsWith("/track") || path.startsWith("/episode");
+      return { type: "iframe", src, w: 400, h: isTrack ? 152 : 380 };
+    }
+
+    // SoundCloud
+    if (host === "soundcloud.com") {
+      const src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&color=%23ff5500&auto_play=true&visual=true`;
+      return { type: "iframe", src, w: 400, h: 166 };
+    }
+
+    // Twitter/X
+    if (host === "twitter.com" || host === "x.com") {
+      return { type: "twitter", url, w: 400, h: 320 };
+    }
+
+    // Instagram
+    if (host === "instagram.com" && u.pathname.includes("/p/")) {
+      const src = `${url.split("?")[0]}embed/`;
+      return { type: "iframe", src, w: 400, h: 480 };
+    }
+  } catch (e) {}
+  return null;
+}
+
+let activePlayer = null;
+
+function openEmbed(embedInfo, url) {
+  if ("ontouchstart" in window) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  if (activePlayer) activePlayer.remove();
+
+  const panel = document.createElement("div");
+  panel.id = "embed-player";
+
+  const toolbar = document.createElement("div");
+  toolbar.id = "embed-toolbar";
+
+  const titleEl = document.createElement("span");
+  titleEl.id = "embed-title";
+  try {
+    titleEl.textContent = new URL(url).hostname.replace("www.", "");
+  } catch (e) {}
+
+  const btnExt = document.createElement("a");
+  btnExt.href = url;
+  btnExt.target = "_blank";
+  btnExt.rel = "noopener noreferrer";
+  btnExt.id = "embed-ext";
+  btnExt.textContent = "↗";
+  btnExt.title = "Abrir en nueva pestaña";
+
+  const btnClose = document.createElement("button");
+  btnClose.id = "embed-close";
+  btnClose.textContent = "✕";
+  btnClose.onclick = () => {
+    panel.remove();
+    activePlayer = null;
+  };
+
+  toolbar.appendChild(titleEl);
+  toolbar.appendChild(btnExt);
+  toolbar.appendChild(btnClose);
+  panel.appendChild(toolbar);
+
+  const content = document.createElement("div");
+  content.id = "embed-content";
+
+  if (embedInfo.type === "twitter") {
+    const tweetContainer = document.createElement("div");
+    tweetContainer.style.cssText = "overflow:auto;height:100%;padding:8px;";
+    const blockquote = document.createElement("blockquote");
+    blockquote.className = "twitter-tweet";
+    const a = document.createElement("a");
+    a.href = embedInfo.url;
+    blockquote.appendChild(a);
+    tweetContainer.appendChild(blockquote);
+    content.appendChild(tweetContainer);
+    if (!document.getElementById("twitter-widgets-js")) {
+      const script = document.createElement("script");
+      script.id = "twitter-widgets-js";
+      script.src = "https://platform.twitter.com/widgets.js";
+      script.async = true;
+      document.body.appendChild(script);
+    } else if (window.twttr) {
+      window.twttr.widgets.load(tweetContainer);
+    }
+  } else {
+    const iframe = document.createElement("iframe");
+    iframe.src = embedInfo.src;
+    iframe.width = "100%";
+    iframe.height = "100%";
+    iframe.frameBorder = "0";
+    iframe.allow = "autoplay; encrypted-media; fullscreen; clipboard-write";
+    iframe.allowFullscreen = true;
+    content.appendChild(iframe);
+  }
+
+  panel.appendChild(content);
+  panel.style.width = embedInfo.w + "px";
+  panel.style.height = embedInfo.h + 40 + "px";
+
+  document.body.appendChild(panel);
+  activePlayer = panel;
+
+  panel.style.left = window.innerWidth - embedInfo.w - 24 + "px";
+  panel.style.top = window.innerHeight - embedInfo.h - 40 - 24 + "px";
+
+  // Dragging
+  let dragging = false,
+    ox = 0,
+    oy = 0;
+  toolbar.addEventListener("pointerdown", (e) => {
+    if (e.target === btnClose || e.target === btnExt) return;
+    dragging = true;
+    ox = e.clientX - panel.offsetLeft;
+    oy = e.clientY - panel.offsetTop;
+    toolbar.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  toolbar.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    panel.style.left = e.clientX - ox + "px";
+    panel.style.top = e.clientY - oy + "px";
+  });
+  toolbar.addEventListener("pointerup", () => {
+    dragging = false;
+  });
+}
+
 function renderConLinks(container, texto) {
   const partes = texto.split(URL_REGEX);
   partes.forEach((parte) => {
     URL_REGEX.lastIndex = 0;
     if (URL_REGEX.test(parte)) {
+      const embedInfo = getEmbedInfo(parte);
       const a = document.createElement("a");
       a.href = parte;
       a.textContent = parte;
-      a.target = "_blank";
       a.rel = "noopener noreferrer";
+      if (embedInfo) {
+        a.onclick = (e) => {
+          e.preventDefault();
+          openEmbed(embedInfo, parte);
+        };
+      } else {
+        a.target = "_blank";
+      }
       container.appendChild(a);
     } else {
       container.appendChild(document.createTextNode(parte));
