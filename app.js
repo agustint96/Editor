@@ -48,30 +48,25 @@ document.addEventListener("pointerdown", (e) => {
     touchStartY = e.clientY;
   }
 
-  // Ignorar botones y links
-  if (
-    target.closest("#btn-desktop") ||
-    target.closest("#btn-mobile") ||
-    target.closest("a")
-  )
-    return;
+  // Ignorar botones, canvas y links
+  if (target.closest("#btn-canvas") || target.closest("a")) return;
 
   // Si toca directo sobre el editor, dejar que el browser maneje el cursor
   if (target === editor) return;
 
-  // Si toca sobre committed: mover cursor al final sin flickear el teclado
+  // Si toca sobre committed: dejar que el browser maneje libremente (scroll, selección, lectura)
   if (target.closest("#committed")) {
-    e.preventDefault();
-    focusEditorAtEnd();
     return;
   }
 
   if (e.pointerType === "touch") {
-    touchPendingFocus = true;
+    // Solo pendiente de focus si ya está al final
+    if (estaAlFinal()) touchPendingFocus = true;
     return;
   }
 
-  // Tap en zona vacía de la página en desktop: enfocar editor
+  // Click en zona vacía en desktop: solo enfocar si ya está al final
+  if (!estaAlFinal()) return;
   e.preventDefault();
   focusEditorAtEnd();
 });
@@ -98,9 +93,7 @@ document.addEventListener("pointerup", (e) => {
 });
 
 function getEditorText() {
-  return editor.innerText
-    .replace(/\u00A0/g, " ")
-    .replace(/\u200B/g, "");
+  return editor.innerText.replace(/\u00A0/g, " ").replace(/\u200B/g, "");
 }
 
 function setEditorText(text) {
@@ -118,7 +111,11 @@ function focusEditorAtEnd() {
   sel.addRange(range);
   requestAnimationFrame(() => {
     if (editor.scrollIntoView) {
-      editor.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      editor.scrollIntoView({
+        block: "center",
+        inline: "nearest",
+        behavior: "smooth",
+      });
     }
   });
 }
@@ -297,10 +294,14 @@ function openEmbed(embedInfo, url) {
   activePlayer = panel;
 
   const vw = window.innerWidth;
-  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const vh = window.visualViewport
+    ? window.visualViewport.height
+    : window.innerHeight;
   const toolbarH = 40;
   const handleH = isMobile ? 12 : 0;
-  const maxPanelWidth = isMobile ? Math.min(vw - 32, 420) : Math.min(embedInfo.w, 560, vw - 24);
+  const maxPanelWidth = isMobile
+    ? Math.min(vw - 32, 420)
+    : Math.min(embedInfo.w, 560, vw - 24);
   let contentH = Math.round((embedInfo.h * maxPanelWidth) / embedInfo.w);
   if (isMobile) {
     contentH = Math.min(contentH, Math.round(vh * 0.48), 340);
@@ -324,7 +325,11 @@ function openEmbed(embedInfo, url) {
     panel.addEventListener(
       "touchstart",
       (e) => {
-        if (!e.target.closest("#embed-handle") && !e.target.closest("#embed-toolbar")) return;
+        if (
+          !e.target.closest("#embed-handle") &&
+          !e.target.closest("#embed-toolbar")
+        )
+          return;
         startY = e.touches[0].clientY;
         startTop = panel.getBoundingClientRect().top;
         panel.style.transition = "none";
@@ -334,7 +339,11 @@ function openEmbed(embedInfo, url) {
     panel.addEventListener(
       "touchmove",
       (e) => {
-        if (!e.target.closest("#embed-handle") && !e.target.closest("#embed-toolbar")) return;
+        if (
+          !e.target.closest("#embed-handle") &&
+          !e.target.closest("#embed-toolbar")
+        )
+          return;
         const dy = e.touches[0].clientY - startY;
         if (dy > 0) {
           panel.style.bottom = "auto";
@@ -477,12 +486,184 @@ function insertTextAtCursor(text) {
   scrollToCaret();
 }
 
-async function confirmar() {
+// ========================
+// CANVAS BUTTON
+// ========================
+
+const CANVAS_IMAGES = [
+  "img/santaolalla.png",
+  "img/chispas.png",
+  "img/ventana.png",
+  "img/baldio.png",
+  "img/grito.jpg",
+  "img/chocolino.png",
+  "img/duendes.jpg",
+  "img/jirafa.png",
+  "img/gatoblanco.png",
+];
+
+const btnCanvas = document.getElementById("btn-canvas");
+const ctx = btnCanvas.getContext("2d");
+const CANVAS_IMAGE_KEY = "naim_canvas_image_index";
+const _savedIdx = parseInt(localStorage.getItem(CANVAS_IMAGE_KEY) ?? "-1", 10);
+let currentCanvasImageIndex = -1;
+let canvasImagesLoaded = {};
+
+function loadCanvasImage(src) {
+  if (canvasImagesLoaded[src]) return Promise.resolve(canvasImagesLoaded[src]);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      canvasImagesLoaded[src] = img;
+      resolve(img);
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+function drawCanvasImage(img) {
+  const w = btnCanvas.width;
+  const h = btnCanvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (img) {
+    ctx.drawImage(img, 0, 0, w, h);
+  } else {
+    // Fallback: draw a simple arrow icon
+    ctx.fillStyle = "#f0f0f0";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#888";
+    ctx.font = `bold ${Math.round(w * 0.38)}px system-ui`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("↓", w / 2, h / 2);
+  }
+}
+
+function pickRandomImageIndex(exclude) {
+  if (CANVAS_IMAGES.length === 1) return 0;
+  let idx;
+  do {
+    idx = Math.floor(Math.random() * CANVAS_IMAGES.length);
+  } while (idx === exclude);
+  return idx;
+}
+
+async function setCanvasImage(forceNew) {
+  const newIdx = forceNew
+    ? pickRandomImageIndex(currentCanvasImageIndex)
+    : pickRandomImageIndex(_savedIdx);
+  currentCanvasImageIndex = newIdx;
+  localStorage.setItem(CANVAS_IMAGE_KEY, String(newIdx));
+  const src = CANVAS_IMAGES[newIdx];
+  const img = await loadCanvasImage(src);
+  drawCanvasImage(img);
+}
+
+// Init canvas with random image on load
+setCanvasImage(false).then(() => {
+  mostrarHint();
+});
+
+// ========================
+// HINT DE PRIMER USO
+// ========================
+
+function mostrarHint() {
+  const hintEl = document.getElementById("btn-hint");
+  const hintText = document.getElementById("btn-hint-text");
+  const esMobile = "ontouchstart" in window || window.innerWidth < 768;
+
+  const textoFinal = esMobile
+    ? "Para guardar tu mensaje presioná la imagen&nbsp;→"
+    : 'Para guardar tu mensaje presioná <span class="hint-keys"><kbd>Shift</kbd><span class="hint-plus">+</span><kbd>Enter</kbd></span> o la imagen&nbsp;→';
+
+  const secuencia = [
+    "En este sitio podés compartir lo que quieras",
+    "Solo se registran fecha y contenido del mensaje",
+    "Todos los mensajes quedan guardados y no se pueden borrar",
+    textoFinal,
+  ];
+
+  let paso = 0;
+
+  function mostrarPaso() {
+    // Fade out si ya hay algo visible
+    if (paso > 0) {
+      hintEl.classList.add("hint-hiding");
+      hintEl.classList.remove("hint-visible");
+    }
+
+    const delay = paso === 0 ? 0 : 400; // esperar fade-out antes de cambiar texto
+    setTimeout(() => {
+      hintText.innerHTML = secuencia[paso];
+      hintEl.classList.remove("hint-hiding");
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          hintEl.classList.add("hint-visible");
+        });
+      });
+
+      paso++;
+
+      if (paso < secuencia.length) {
+        // 2 segundos visible, luego siguiente
+        setTimeout(mostrarPaso, 4000);
+      } else {
+        // Último mensaje (hint del botón): ocultar a los 10 segundos
+        setTimeout(() => {
+          hintEl.classList.add("hint-hiding");
+          hintEl.classList.remove("hint-visible");
+          setTimeout(() => {
+            hintEl.style.display = "none";
+          }, 400);
+        }, 10000);
+      }
+    }, delay);
+  }
+
+  mostrarPaso();
+}
+
+// Handle canvas click: scroll to bottom if not at bottom, else save
+btnCanvas.addEventListener("click", async () => {
+  if (!estaAlFinal()) {
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    return;
+  }
+  // At bottom: save if there's text
   const mensaje = getEditorText();
-  if (!mensaje.trim()) return;
+  if (!mensaje) return;
   setEditorText("");
   updateHeight();
   focusEditorAtEnd();
+  // Change image on save
+  await setCanvasImage(true);
+  await polling();
+  guardar(mensaje);
+});
+
+function estaCaretVisibleEnViewport() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+  const rect = sel.getRangeAt(0).getBoundingClientRect();
+  const vh = window.visualViewport
+    ? window.visualViewport.height
+    : window.innerHeight;
+  return rect.bottom > 0 && rect.top < vh;
+}
+
+async function confirmar() {
+  if (!estaCaretVisibleEnViewport()) {
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    return;
+  }
+  const mensaje = getEditorText();
+  if (!mensaje) return;
+  setEditorText("");
+  updateHeight();
+  focusEditorAtEnd();
+  await setCanvasImage(true);
   await polling();
   guardar(mensaje);
 }
@@ -497,7 +678,11 @@ editor.addEventListener("focus", () => {
     updateHeight();
     scrollToCaret();
     if (editor.scrollIntoView) {
-      editor.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      editor.scrollIntoView({
+        block: "center",
+        inline: "nearest",
+        behavior: "smooth",
+      });
     }
   }, 200);
 });
@@ -508,7 +693,11 @@ editor.addEventListener("touchend", () => {
       updateHeight();
       scrollToCaret();
       if (editor.scrollIntoView) {
-        editor.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        editor.scrollIntoView({
+          block: "center",
+          inline: "nearest",
+          behavior: "smooth",
+        });
       }
     }, 150);
   }
@@ -521,9 +710,17 @@ editor.addEventListener("keydown", (e) => {
   }
   if (e.key === "Enter" && e.shiftKey && !("ontouchstart" in window)) {
     e.preventDefault();
-    confirmar();
+    animarYConfirmar();
   }
 });
+
+function animarYConfirmar() {
+  btnCanvas.classList.add("canvas-pressed");
+  setTimeout(() => {
+    btnCanvas.classList.remove("canvas-pressed");
+  }, 180);
+  confirmar();
+}
 
 let ultimoId = 0;
 
