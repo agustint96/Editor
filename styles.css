@@ -137,13 +137,7 @@ body {
   transform: scale(0.97);
 }
 
-.kbd-sep {
-  font-size: 12px;
-  color: #bbb;
-  user-select: none;
-}
-
-
+.kbd {
   background: #f5f5f5;
   border: 1px solid #ddd;
   border-bottom: 2px solid #ccc;
@@ -151,6 +145,12 @@ body {
   padding: 1px 7px;
   font-size: 12px;
   color: #444;
+}
+
+.kbd-sep {
+  font-size: 12px;
+  color: #bbb;
+  user-select: none;
 }
 
 #btn-mobile {
@@ -199,6 +199,19 @@ body {
 #status {
   left: 1rem;
   font-size: 11px;
+}
+
+@media (max-width: 767px) {
+  #committed,
+  #editor {
+    display: inline;
+    width: auto;
+  }
+
+  #editor {
+    min-width: 1ch;
+    vertical-align: baseline;
+  }
 }
 
 /* =========================
@@ -338,12 +351,29 @@ body {
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   min-width: 280px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
   resize: both;
+}
+
+#embed-player.embed-mobile {
+  width: auto;
+  max-width: calc(100vw - 24px);
+  min-width: 280px;
+  border-radius: 16px;
+}
+
+#embed-player.embed-mobile #embed-handle {
+  height: 8px;
+  width: 36px;
+  margin: 10px auto 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.12);
 }
 
 #embed-toolbar {
@@ -357,6 +387,7 @@ body {
   cursor: grab;
   user-select: none;
   flex-shrink: 0;
+  touch-action: none;
 }
 
 #embed-toolbar:active {
@@ -414,4 +445,43 @@ body {
   border: none;
   width: 100%;
   height: 100%;
+}
+
+/* Handle de swipe (solo mobile) */
+#embed-handle {
+  width: 100%;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  flex-shrink: 0;
+  touch-action: none;
+}
+
+#embed-handle::after {
+  content: "";
+  display: block;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: #ccc;
+}
+
+/* Panel en modo mobile: tamaño proporcional y centrado arriba */
+#embed-player.embed-mobile {
+  left: 50% !important;
+  top: 12px !important;
+  bottom: auto !important;
+  width: auto !important;
+  max-width: calc(100vw - 24px) !important;
+  min-width: 280px !important;
+  border-radius: 16px !important;
+  resize: none;
+  transform: translateX(-50%) !important;
+  transition: top 0.2s ease, left 0.2s ease;
+}
+
+#embed-player.embed-mobile #embed-toolbar {
+  cursor: default;
 }

@@ -33,8 +33,20 @@ function loadLocalMessages() {
   }
 }
 
+let touchStartX = 0;
+let touchStartY = 0;
+let touchMoved = false;
+let touchPendingFocus = false;
+
 document.addEventListener("pointerdown", (e) => {
   const target = e.target;
+
+  if (e.pointerType === "touch") {
+    touchMoved = false;
+    touchPendingFocus = false;
+    touchStartX = e.clientX;
+    touchStartY = e.clientY;
+  }
 
   // Ignorar botones y links
   if (
@@ -50,27 +62,65 @@ document.addEventListener("pointerdown", (e) => {
   // Si toca sobre committed: mover cursor al final sin flickear el teclado
   if (target.closest("#committed")) {
     e.preventDefault();
-    editor.focus();
-    const sel = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    range.collapse(false);
-    sel.removeAllRanges();
-    sel.addRange(range);
+    focusEditorAtEnd();
     return;
   }
 
-  // Tap en zona vacía de la página
+  if (e.pointerType === "touch") {
+    touchPendingFocus = true;
+    return;
+  }
+
+  // Tap en zona vacía de la página en desktop: enfocar editor
   e.preventDefault();
-  editor.focus();
+  focusEditorAtEnd();
+});
+
+document.addEventListener("pointermove", (e) => {
+  if (e.pointerType !== "touch" || !touchPendingFocus) return;
+  const dx = Math.abs(e.clientX - touchStartX);
+  const dy = Math.abs(e.clientY - touchStartY);
+  if (dx > 10 || dy > 10) {
+    touchMoved = true;
+    touchPendingFocus = false;
+  }
+});
+
+document.addEventListener("pointerup", (e) => {
+  if (e.pointerType !== "touch" || !touchPendingFocus) return;
+  if (!touchMoved) {
+    e.preventDefault();
+    setTimeout(() => {
+      focusEditorAtEnd();
+    }, 60);
+  }
+  touchPendingFocus = false;
 });
 
 function getEditorText() {
-  return editor.innerText.replace(/\u00A0/g, " ");
+  return editor.innerText
+    .replace(/\u00A0/g, " ")
+    .replace(/\u200B/g, "");
 }
 
 function setEditorText(text) {
   editor.innerText = text;
+}
+
+function focusEditorAtEnd() {
+  editor.focus();
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+  requestAnimationFrame(() => {
+    if (editor.scrollIntoView) {
+      editor.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    }
+  });
 }
 
 function updateHeight() {
@@ -117,7 +167,7 @@ function getEmbedInfo(url) {
     if (ytMatch)
       return {
         type: "iframe",
-        src: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1`,
+        src: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0&playsinline=1&enablejsapi=1`,
         w: 560,
         h: 315,
       };
@@ -161,17 +211,16 @@ function getEmbedInfo(url) {
 }
 
 let activePlayer = null;
+const renderedMessageIds = new Set();
 
 function openEmbed(embedInfo, url) {
-  if ("ontouchstart" in window) {
-    window.open(url, "_blank", "noopener,noreferrer");
-    return;
-  }
+  const isMobile = "ontouchstart" in window || window.innerWidth < 768;
 
   if (activePlayer) activePlayer.remove();
 
   const panel = document.createElement("div");
   panel.id = "embed-player";
+  if (isMobile) panel.classList.add("embed-mobile");
 
   const toolbar = document.createElement("div");
   toolbar.id = "embed-toolbar";
@@ -203,6 +252,12 @@ function openEmbed(embedInfo, url) {
   toolbar.appendChild(btnClose);
   panel.appendChild(toolbar);
 
+  if (isMobile) {
+    const handle = document.createElement("div");
+    handle.id = "embed-handle";
+    panel.appendChild(handle);
+  }
+
   const content = document.createElement("div");
   content.id = "embed-content";
 
@@ -231,41 +286,98 @@ function openEmbed(embedInfo, url) {
     iframe.width = "100%";
     iframe.height = "100%";
     iframe.frameBorder = "0";
-    iframe.allow = "autoplay; encrypted-media; fullscreen; clipboard-write";
+    iframe.allow =
+      "autoplay; encrypted-media; fullscreen; clipboard-write; picture-in-picture";
     iframe.allowFullscreen = true;
     content.appendChild(iframe);
   }
 
   panel.appendChild(content);
-  panel.style.width = embedInfo.w + "px";
-  panel.style.height = embedInfo.h + 40 + "px";
-
   document.body.appendChild(panel);
   activePlayer = panel;
 
-  panel.style.left = window.innerWidth - embedInfo.w - 24 + "px";
-  panel.style.top = window.innerHeight - embedInfo.h - 40 - 24 + "px";
+  const vw = window.innerWidth;
+  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const toolbarH = 40;
+  const handleH = isMobile ? 12 : 0;
+  const maxPanelWidth = isMobile ? Math.min(vw - 32, 420) : Math.min(embedInfo.w, 560, vw - 24);
+  let contentH = Math.round((embedInfo.h * maxPanelWidth) / embedInfo.w);
+  if (isMobile) {
+    contentH = Math.min(contentH, Math.round(vh * 0.48), 340);
+  }
+  const panelHeight = toolbarH + handleH + contentH;
 
-  // Dragging
-  let dragging = false,
-    ox = 0,
-    oy = 0;
-  toolbar.addEventListener("pointerdown", (e) => {
-    if (e.target === btnClose || e.target === btnExt) return;
-    dragging = true;
-    ox = e.clientX - panel.offsetLeft;
-    oy = e.clientY - panel.offsetTop;
-    toolbar.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  });
-  toolbar.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
-    panel.style.left = e.clientX - ox + "px";
-    panel.style.top = e.clientY - oy + "px";
-  });
-  toolbar.addEventListener("pointerup", () => {
-    dragging = false;
-  });
+  panel.style.width = maxPanelWidth + "px";
+  panel.style.height = panelHeight + "px";
+  panel.style.top = "12px";
+  panel.style.left = "50%";
+  panel.style.transform = "translateX(-50%)";
+  panel.style.bottom = "auto";
+
+  if (isMobile) {
+    panel.style.right = "auto";
+  }
+
+  if (isMobile) {
+    let startY = 0;
+    let startTop = 0;
+    panel.addEventListener(
+      "touchstart",
+      (e) => {
+        if (!e.target.closest("#embed-handle") && !e.target.closest("#embed-toolbar")) return;
+        startY = e.touches[0].clientY;
+        startTop = panel.getBoundingClientRect().top;
+        panel.style.transition = "none";
+      },
+      { passive: true },
+    );
+    panel.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!e.target.closest("#embed-handle") && !e.target.closest("#embed-toolbar")) return;
+        const dy = e.touches[0].clientY - startY;
+        if (dy > 0) {
+          panel.style.bottom = "auto";
+          panel.style.top = startTop + dy + "px";
+        }
+      },
+      { passive: true },
+    );
+    panel.addEventListener(
+      "touchend",
+      (e) => {
+        const dy = e.changedTouches[0].clientY - startY;
+        if (dy > 80) {
+          panel.remove();
+          activePlayer = null;
+        } else {
+          panel.style.transition = "top 0.2s ease";
+          panel.style.top = "auto";
+          panel.style.bottom = "12px";
+        }
+      },
+      { passive: true },
+    );
+  } else {
+    let dragOffX = 0,
+      dragOffY = 0,
+      dragging = false;
+    toolbar.addEventListener("mousedown", (e) => {
+      dragging = true;
+      dragOffX = e.clientX - panel.getBoundingClientRect().left;
+      dragOffY = e.clientY - panel.getBoundingClientRect().top;
+      panel.style.transition = "none";
+      e.preventDefault();
+    });
+    document.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      panel.style.left = e.clientX - dragOffX + "px";
+      panel.style.top = e.clientY - dragOffY + "px";
+    });
+    document.addEventListener("mouseup", () => {
+      dragging = false;
+    });
+  }
 }
 
 function renderConLinks(container, texto) {
@@ -293,7 +405,11 @@ function renderConLinks(container, texto) {
   });
 }
 
-function agregarSpan(color, mensaje) {
+function agregarSpan(color, mensaje, id) {
+  mensaje = mensaje.replace(/\u00A0/g, " ").replace(/\u200B/g, "");
+  if (mensaje === "") return;
+  if (id && renderedMessageIds.has(id)) return;
+  if (id) renderedMessageIds.add(id);
   const span = document.createElement("span");
   span.className = "msg";
   span.style.color = color;
@@ -366,6 +482,7 @@ async function confirmar() {
   if (!mensaje.trim()) return;
   setEditorText("");
   updateHeight();
+  focusEditorAtEnd();
   await polling();
   guardar(mensaje);
 }
@@ -373,6 +490,28 @@ async function confirmar() {
 editor.addEventListener("input", () => {
   updateHeight();
   scrollToCaret();
+});
+
+editor.addEventListener("focus", () => {
+  setTimeout(() => {
+    updateHeight();
+    scrollToCaret();
+    if (editor.scrollIntoView) {
+      editor.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    }
+  }, 200);
+});
+
+editor.addEventListener("touchend", () => {
+  if (document.activeElement === editor) {
+    setTimeout(() => {
+      updateHeight();
+      scrollToCaret();
+      if (editor.scrollIntoView) {
+        editor.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      }
+    }, 150);
+  }
 });
 
 editor.addEventListener("keydown", (e) => {
@@ -394,6 +533,17 @@ function estaAlFinal() {
 
 async function cargar() {
   setStatus("cargando...", "#aaa");
+  const localRows = loadLocalMessages();
+  if (localRows.length) {
+    committedEl.innerHTML = "";
+    ultimoId = 0;
+    localRows.forEach((r) => {
+      agregarSpan(r.color || "#000", r.mensaje, r.id);
+      if (r.id > ultimoId) ultimoId = r.id;
+    });
+    setStatus("cargando desde caché...", "#888");
+  }
+
   try {
     const res = await fetch(
       SUPABASE_URL + "/rest/v1/notas?select=id,mensaje,color&order=id.asc",
@@ -406,10 +556,11 @@ async function cargar() {
     );
     if (res.ok) {
       const rows = await res.json();
-      committedEl.innerHTML = "";
-      ultimoId = 0;
+      if (!localRows.length) {
+        committedEl.innerHTML = "";
+      }
       rows.forEach((r) => {
-        agregarSpan(r.color || "#000", r.mensaje);
+        agregarSpan(r.color || "#000", r.mensaje, r.id);
         if (r.id > ultimoId) ultimoId = r.id;
       });
       saveLocalMessages(rows);
@@ -419,7 +570,7 @@ async function cargar() {
           top: document.body.scrollHeight,
           behavior: "instant",
         });
-        editor.focus();
+        focusEditorAtEnd();
       });
     } else {
       const txt = await res.text();
@@ -480,6 +631,14 @@ async function polling() {
 }
 
 updateHeight();
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", () => {
+    updateHeight();
+    if (document.activeElement === editor) {
+      setTimeout(scrollToCaret, 100);
+    }
+  });
+}
 cargar().then(() => {
   setInterval(polling, 5000);
 });
