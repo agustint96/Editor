@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Editor</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background: #fff;
+        font-family: system-ui, sans-serif;
+        min-height: 100vh;
+      }
+
+      #page {
+        position: relative;
+        min-height: 100vh;
+        padding: 1.4rem;
+        cursor: text;
+      }
+
+      /* Todo el contenido histórico + el área de escritura en flujo normal */
+      #committed {
+        display: inline;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 15px;
+        line-height: 1.7;
+      }
+
+      #committed .msg {
+        display: inline;
+      }
+
+      /* El área donde el usuario escribe - texto renderizado visible */
+      #editor {
+        display: inline;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 15px;
+        line-height: 1.7;
+        color: #888;
+        outline: none;
+        caret-color: transparent;
+        min-width: 1ch;
+      }
+
+      #hidden-input {
+        position: fixed;
+        opacity: 0;
+        width: 1px;
+        height: 1px;
+        top: 0;
+        left: 0;
+        border: none;
+        padding: 0;
+        margin: 0;
+        resize: none;
+        overflow: hidden;
+        background: transparent;
+        color: transparent;
+        caret-color: transparent;
+      }
+
+      /* Cursor real como elemento inline */
+      #caret {
+        display: inline-block;
+        width: 1px;
+        height: 1.2em;
+        background: #111;
+        margin-left: 1px;
+        vertical-align: -0.15em;
+        border-radius: 0;
+        animation: blink 1s step-start infinite;
+        pointer-events: none;
+        user-select: none;
+      }
+
+      @keyframes blink {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0;
+        }
+      }
+
+      #status {
+        position: fixed;
+        bottom: 1rem;
+        left: 1.4rem;
+        font-size: 12px;
+        color: #aaa;
+        pointer-events: none;
+      }
+
+      #btn-desktop {
+        position: fixed;
+        bottom: 2.5rem;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 12px;
+        padding: 0.55rem 1.4rem;
+        font-size: 13px;
+        font-family: system-ui, sans-serif;
+        color: #555;
+        cursor: pointer;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+        transition:
+          box-shadow 0.2s,
+          border-color 0.2s;
+      }
+      #btn-desktop:hover {
+        border-color: #bbb;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.11);
+      }
+      #btn-desktop:active {
+        transform: translateX(-50%) scale(0.97);
+      }
+      .kbd {
+        background: #f5f5f5;
+        border: 1px solid #ddd;
+        border-bottom: 2px solid #ccc;
+        border-radius: 5px;
+        padding: 1px 7px;
+        font-size: 12px;
+        color: #444;
+      }
+
+      #btn-mobile {
+        display: none;
+        position: fixed;
+        bottom: 2rem;
+        right: 1.4rem;
+        background: rgba(255, 255, 255, 0.55);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 50px;
+        padding: 0.6rem 1.5rem;
+        font-size: 14px;
+        font-family: system-ui, sans-serif;
+        color: #222;
+        cursor: pointer;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      @media (max-width: 600px) {
+        #btn-desktop {
+          display: none;
+        }
+        #btn-mobile {
+          display: block;
+        }
+      }
+    </style>
+  </head>
+  <body onclick="focusInput()">
+    <div id="page">
+      <span id="committed"></span
+      ><span id="editor"
+        ><span id="typing-before"></span><span id="caret"></span
+        ><span id="typing-after"></span
+      ></span>
+    </div>
+
+    <div id="status"></div>
+
+    <button id="btn-desktop" onclick="confirmar()">
+      <span class="kbd">Enter</span>
+      <span style="margin-left: 4px">para guardar</span>
+      <span style="color: #ccc; margin: 0 6px">·</span>
+      <span class="kbd">Shift</span>
+      <span style="color: #bbb">+</span>
+      <span class="kbd">Enter</span>
+      <span style="margin-left: 4px">nueva línea</span>
+    </button>
+
+    <button id="btn-mobile" onclick="confirmar()">Guardar</button>
+
+    <textarea
+      id="hidden-input"
+      autocomplete="off"
+      autocorrect="off"
+      autocapitalize="off"
+      spellcheck="false"
+    ></textarea>
+
+    <script>
+      const SUPABASE_URL = "https://iypxmjxmhlkhkiwadann.supabase.co";
+      const SUPABASE_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5cHhtanhtaGxraGtpd2FkYW5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMjk4NTcsImV4cCI6MjA5NjcwNTg1N30.nEahrHZdBETYGRFNtkAKHT8Tig_0crHa5PA9gQ0PVXE";
+
+      const input = document.getElementById("hidden-input");
+      const committedEl = document.getElementById("committed");
+      const typingBeforeEl = document.getElementById("typing-before");
+      const typingAfterEl = document.getElementById("typing-after");
+      const caretEl = document.getElementById("caret");
+      const statusEl = document.getElementById("status");
+
+      const TAB = "    ";
+      let cursorOn = true;
+      let guardadoEstaSesion = false;
+
+      const colorAnterior = localStorage.getItem("ultimo_color");
+      const colorSesion = colorAnterior === "#000" ? "#000" : "#000";
+
+      function focusInput() {
+        input.focus();
+      }
+
+      function updateHeight() {
+        const editor = document.getElementById("page");
+        document.body.style.minHeight = editor.offsetHeight + 120 + "px";
+      }
+
+      function updateDisplay() {
+        const value = input.value;
+        const pos = input.selectionStart ?? value.length;
+        typingBeforeEl.textContent = value.slice(0, pos);
+        typingAfterEl.textContent = value.slice(pos);
+        caretEl.style.opacity =
+          input === document.activeElement && cursorOn ? "1" : "0";
+        updateHeight();
+      }
+
+      setInterval(() => {
+        cursorOn = !cursorOn;
+        caretEl.style.opacity =
+          input === document.activeElement && cursorOn ? "1" : "0";
+      }, 500);
+
+      function setStatus(msg, color) {
+        statusEl.textContent = msg;
+        statusEl.style.color = color || "#aaa";
+        if (msg && color !== "#aaa")
+          setTimeout(() => {
+            statusEl.textContent = "";
+          }, 3000);
+      }
+
+      function agregarSpan(color, mensaje) {
+        const span = document.createElement("span");
+        span.className = "msg";
+        span.style.color = color;
+        span.textContent = mensaje;
+        committedEl.appendChild(span);
+      }
+
+      async function guardar(mensaje) {
+        const now = new Date();
+        const fecha = now.toISOString().slice(0, 10);
+        const hora = now.toTimeString().slice(0, 8);
+        try {
+          const res = await fetch(SUPABASE_URL + "/rest/v1/notas", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: SUPABASE_KEY,
+              Authorization: "Bearer " + SUPABASE_KEY,
+              Prefer: "return=representation",
+            },
+            body: JSON.stringify({ mensaje, fecha, hora, color: colorSesion }),
+          });
+          if (res.ok) {
+            agregarSpan(colorSesion, mensaje);
+            setStatus("✓ guardado", "#4caf50");
+            if (!guardadoEstaSesion) {
+              guardadoEstaSesion = true;
+              localStorage.setItem("ultimo_color", colorSesion);
+            }
+          } else {
+            const txt = await res.text();
+            setStatus("✗ error: " + txt, "#e53935");
+            console.error(txt);
+          }
+        } catch (e) {
+          setStatus("✗ sin conexión", "#e53935");
+          console.error(e);
+        }
+      }
+
+      function confirmar() {
+        const mensaje = input.value;
+        if (!mensaje.trim()) return;
+        input.value = "";
+        updateDisplay();
+        guardar(mensaje);
+      }
+
+      input.addEventListener("input", updateDisplay);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          confirmar();
+        } else if (e.key === "Enter" && e.shiftKey) {
+          e.preventDefault();
+          const start = input.selectionStart;
+          input.value =
+            input.value.slice(0, start) + "\n" + input.value.slice(start);
+          input.selectionStart = input.selectionEnd = start + 1;
+          updateDisplay();
+        } else if (e.key === "Tab") {
+          e.preventDefault();
+          const start = input.selectionStart;
+          input.value =
+            input.value.slice(0, start) + TAB + input.value.slice(start);
+          input.selectionStart = input.selectionEnd = start + TAB.length;
+          updateDisplay();
+        }
+      });
+
+      input.addEventListener("click", updateDisplay);
+      input.addEventListener("keyup", updateDisplay);
+      input.addEventListener("select", updateDisplay);
+      input.addEventListener("focus", updateDisplay);
+      input.addEventListener("blur", () => {
+        caretEl.style.opacity = "0";
+      });
+
+      input.addEventListener("paste", (e) => {
+        e.preventDefault();
+        const text = e.clipboardData.getData("text/plain");
+        const start = input.selectionStart;
+        input.value =
+          input.value.slice(0, start) +
+          text +
+          input.value.slice(input.selectionEnd);
+        input.selectionStart = input.selectionEnd = start + text.length;
+        updateDisplay();
+      });
+
+      async function cargar() {
+        setStatus("cargando...", "#aaa");
+        try {
+          const res = await fetch(
+            SUPABASE_URL +
+              "/rest/v1/notas?select=id,mensaje,color&order=id.asc",
+            {
+              headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: "Bearer " + SUPABASE_KEY,
+              },
+            },
+          );
+          if (res.ok) {
+            const rows = await res.json();
+            committedEl.innerHTML = "";
+            rows.forEach((r) => {
+              agregarSpan(r.color || "#000", r.mensaje);
+            });
+            setStatus("", "");
+          } else {
+            const txt = await res.text();
+            setStatus("✗ error al cargar: " + txt, "#e53935");
+          }
+        } catch (e) {
+          setStatus("✗ sin conexión al cargar", "#e53935");
+          console.error(e);
+        }
+      }
+
+      focusInput();
+      updateDisplay();
+      cargar();
+    </script>
+  </body>
+</html>
