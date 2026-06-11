@@ -126,6 +126,9 @@ async function guardar(mensaje) {
       body: JSON.stringify({ mensaje, fecha, hora, color: colorSesion }),
     });
     if (res.ok) {
+      const rows = await res.json();
+      const id = rows?.[0]?.id;
+      if (id && id > ultimoId) ultimoId = id;
       agregarSpan(colorSesion, mensaje);
       setStatus("✓ guardado", "#4caf50");
       if (!guardadoEstaSesion) {
@@ -143,11 +146,12 @@ async function guardar(mensaje) {
   }
 }
 
-function confirmar() {
+async function confirmar() {
   const mensaje = input.value;
   if (!mensaje.trim()) return;
   input.value = "";
   updateDisplay();
+  await polling();
   guardar(mensaje);
 }
 
