@@ -391,6 +391,14 @@
               agregarSpan(r.color || "#000", r.mensaje);
             });
             setStatus("", "");
+            // Scroll al final una vez cargadas las notas
+            requestAnimationFrame(() => {
+              window.scrollTo({
+                top: document.body.scrollHeight,
+                behavior: "instant",
+              });
+              focusInput();
+            });
           } else {
             const txt = await res.text();
             setStatus("✗ error al cargar: " + txt, "#e53935");
