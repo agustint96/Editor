@@ -1,0 +1,164 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #fff;
+  font-family: system-ui, sans-serif;
+  min-height: 100dvh;
+}
+
+#page {
+  position: relative;
+  min-height: 100dvh;
+  padding: 1.4rem;
+  padding-bottom: 6rem;
+  cursor: text;
+}
+
+/* Todo el contenido histórico + el área de escritura en flujo normal */
+#committed {
+  display: inline;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+#committed .msg {
+  display: inline;
+}
+
+/* El área donde el usuario escribe - texto renderizado visible */
+#editor {
+  display: inline;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 15px;
+  line-height: 1.7;
+  color: #888;
+  outline: none;
+  caret-color: transparent;
+  min-width: 1ch;
+}
+
+#hidden-input {
+  position: fixed;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  top: 0;
+  left: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+}
+
+/* Cursor real como elemento inline */
+#caret {
+  display: inline-block;
+  width: 1px;
+  height: 1.2em;
+  background: #111;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  border-radius: 0;
+  animation: blink 1s step-start infinite;
+  pointer-events: none;
+  user-select: none;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+#status {
+  position: fixed;
+  bottom: 1rem;
+  left: 1.4rem;
+  font-size: 12px;
+  color: #aaa;
+  pointer-events: none;
+}
+
+#btn-desktop {
+  position: fixed;
+  bottom: 2.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 0.55rem 1.4rem;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  color: #555;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+  transition:
+    box-shadow 0.2s,
+    border-color 0.2s;
+}
+
+#btn-desktop:hover {
+  border-color: #bbb;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.11);
+}
+
+#btn-desktop:active {
+  transform: translateX(-50%) scale(0.97);
+}
+
+.kbd {
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-bottom: 2px solid #ccc;
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-size: 12px;
+  color: #444;
+}
+
+#btn-mobile {
+  display: none;
+  position: fixed;
+  bottom: 2rem;
+  right: 1.4rem;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50px;
+  padding: 0.6rem 1.5rem;
+  font-size: 14px;
+  font-family: system-ui, sans-serif;
+  color: #222;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 600px) {
+  #btn-desktop {
+    display: none;
+  }
+  #btn-mobile {
+    display: block;
+  }
+}
