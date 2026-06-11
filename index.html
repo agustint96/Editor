@@ -17,9 +17,14 @@
 
     <div id="status"></div>
 
-    <button id="btn-desktop" onclick="confirmar()">
-      <span style="margin-left: 4px">Guardar</span>
-    </button>
+    <div id="btn-desktop-wrap">
+      <span id="kbd-hint"
+        ><span class="kbd">⇧</span><span class="kbd-sep">+</span
+        ><span class="kbd">Enter</span></span
+      >
+      <span class="kbd-sep">+</span>
+      <button id="btn-desktop" onclick="confirmar()">Guardar</button>
+    </div>
 
     <button id="btn-mobile" onclick="confirmar()">Guardar</button>
 

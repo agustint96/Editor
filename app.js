@@ -209,6 +209,10 @@ editor.addEventListener("keydown", (e) => {
     e.preventDefault();
     insertTextAtCursor(TAB);
   }
+  if (e.key === "Enter" && e.shiftKey && !("ontouchstart" in window)) {
+    e.preventDefault();
+    confirmar();
+  }
 });
 
 let ultimoId = 0;
