@@ -2,7 +2,10 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content"
+    />
     <title>Editor</title>
     <style>
       * {
@@ -14,13 +17,14 @@
       body {
         background: #fff;
         font-family: system-ui, sans-serif;
-        min-height: 100vh;
+        min-height: 100dvh;
       }
 
       #page {
         position: relative;
-        min-height: 100vh;
+        min-height: 100dvh;
         padding: 1.4rem;
+        padding-bottom: 6rem;
         cursor: text;
       }
 
@@ -227,13 +231,21 @@
       }
 
       function scrollToCaret() {
-        // En móvil el teclado achica el viewport — scroll para que el caret quede visible
-        const rect = caretEl.getBoundingClientRect();
-        const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-        const margin = 80;
-        if (rect.bottom > vh - margin) {
-          window.scrollBy({ top: rect.bottom - (vh - margin), behavior: "smooth" });
-        }
+        // Esperar un frame para que el DOM se actualice antes de medir
+        requestAnimationFrame(() => {
+          const rect = caretEl.getBoundingClientRect();
+          const vvh = window.visualViewport
+            ? window.visualViewport.height
+            : window.innerHeight;
+          const margin = 100;
+          if (rect.bottom > vvh - margin) {
+            const extra = rect.bottom - (vvh - margin);
+            window.scrollTo({
+              top: window.scrollY + extra,
+              behavior: "smooth",
+            });
+          }
+        });
       }
 
       function updateDisplay() {
@@ -247,12 +259,10 @@
         scrollToCaret();
       }
 
-      // Cuando el teclado virtual aparece/desaparece en móvil
+      // Cuando el teclado virtual sube/baja en móvil
       if (window.visualViewport) {
-        window.visualViewport.addEventListener("resize", () => {
-          updateHeight();
-          scrollToCaret();
-        });
+        window.visualViewport.addEventListener("resize", scrollToCaret);
+        window.visualViewport.addEventListener("scroll", scrollToCaret);
       }
 
       setInterval(() => {
