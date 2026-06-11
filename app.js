@@ -187,6 +187,13 @@ input.addEventListener("paste", (e) => {
   updateDisplay();
 });
 
+// Último id que ya tenemos renderizado
+let ultimoId = 0;
+
+function estaAlFinal() {
+  return window.scrollY + window.innerHeight >= document.body.scrollHeight - 60;
+}
+
 async function cargar() {
   setStatus("cargando...", "#aaa");
   try {
@@ -202,11 +209,12 @@ async function cargar() {
     if (res.ok) {
       const rows = await res.json();
       committedEl.innerHTML = "";
+      ultimoId = 0;
       rows.forEach((r) => {
         agregarSpan(r.color || "#000", r.mensaje);
+        if (r.id > ultimoId) ultimoId = r.id;
       });
       setStatus("", "");
-      // Scroll al final una vez cargadas las notas
       requestAnimationFrame(() => {
         window.scrollTo({
           top: document.body.scrollHeight,
@@ -224,6 +232,46 @@ async function cargar() {
   }
 }
 
+async function polling() {
+  try {
+    const res = await fetch(
+      SUPABASE_URL +
+        `/rest/v1/notas?select=id,mensaje,color&id=gt.${ultimoId}&order=id.asc`,
+      {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: "Bearer " + SUPABASE_KEY,
+        },
+      },
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      if (rows.length > 0) {
+        const alFinal = estaAlFinal();
+        rows.forEach((r) => {
+          agregarSpan(r.color || "#000", r.mensaje);
+          if (r.id > ultimoId) ultimoId = r.id;
+        });
+        // Solo hacer scroll si ya estabas al final
+        if (alFinal) {
+          requestAnimationFrame(() => {
+            window.scrollTo({
+              top: document.body.scrollHeight,
+              behavior: "smooth",
+            });
+          });
+        }
+      }
+    }
+  } catch (e) {
+    // Silencioso para no interrumpir al usuario
+    console.error("polling error:", e);
+  }
+}
+
 focusInput();
 updateDisplay();
-cargar();
+cargar().then(() => {
+  // Arrancar polling cada 5 segundos una vez que cargó todo
+  setInterval(polling, 5000);
+});
