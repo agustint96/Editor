@@ -226,6 +226,16 @@
         document.body.style.minHeight = editor.offsetHeight + 120 + "px";
       }
 
+      function scrollToCaret() {
+        // En móvil el teclado achica el viewport — scroll para que el caret quede visible
+        const rect = caretEl.getBoundingClientRect();
+        const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        const margin = 80;
+        if (rect.bottom > vh - margin) {
+          window.scrollBy({ top: rect.bottom - (vh - margin), behavior: "smooth" });
+        }
+      }
+
       function updateDisplay() {
         const value = input.value;
         const pos = input.selectionStart ?? value.length;
@@ -234,6 +244,15 @@
         caretEl.style.opacity =
           input === document.activeElement && cursorOn ? "1" : "0";
         updateHeight();
+        scrollToCaret();
+      }
+
+      // Cuando el teclado virtual aparece/desaparece en móvil
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", () => {
+          updateHeight();
+          scrollToCaret();
+        });
       }
 
       setInterval(() => {
