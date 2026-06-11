@@ -183,13 +183,7 @@
     <div id="status"></div>
 
     <button id="btn-desktop" onclick="confirmar()">
-      <span class="kbd">Enter</span>
-      <span style="margin-left: 4px">para guardar</span>
-      <span style="color: #ccc; margin: 0 6px">·</span>
-      <span class="kbd">Shift</span>
-      <span style="color: #bbb">+</span>
-      <span class="kbd">Enter</span>
-      <span style="margin-left: 4px">nueva línea</span>
+      <span style="margin-left: 4px">Guardar</span>
     </button>
 
     <button id="btn-mobile" onclick="confirmar()">Guardar</button>
@@ -331,10 +325,7 @@
 
       input.addEventListener("input", updateDisplay);
       input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          confirmar();
-        } else if (e.key === "Enter" && e.shiftKey) {
+        if (e.key === "Enter") {
           e.preventDefault();
           const start = input.selectionStart;
           input.value =
