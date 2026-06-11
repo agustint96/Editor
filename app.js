@@ -33,19 +33,37 @@ function loadLocalMessages() {
   }
 }
 
-function focusEditor(e) {
-  const target = e && e.target;
+document.addEventListener("pointerdown", (e) => {
+  const target = e.target;
+
+  // Ignorar botones y links
   if (
-    target &&
-    (target.closest("#btn-desktop") ||
-      target.closest("#btn-mobile") ||
-      target.closest("a"))
-  ) {
+    target.closest("#btn-desktop") ||
+    target.closest("#btn-mobile") ||
+    target.closest("a")
+  )
+    return;
+
+  // Si toca directo sobre el editor, dejar que el browser maneje el cursor
+  if (target === editor) return;
+
+  // Si toca sobre committed: mover cursor al final sin flickear el teclado
+  if (target.closest("#committed")) {
+    e.preventDefault();
+    editor.focus();
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
     return;
   }
-  if (target && target.closest && target.closest("#committed")) return;
+
+  // Tap en zona vacía de la página
+  e.preventDefault();
   editor.focus();
-}
+});
 
 function getEditorText() {
   return editor.innerText.replace(/\u00A0/g, " ");
@@ -286,7 +304,6 @@ async function polling() {
   }
 }
 
-focusEditor();
 updateHeight();
 cargar().then(() => {
   setInterval(polling, 5000);
