@@ -721,6 +721,7 @@ function mostrarBrunoMunari() {
   let mouseRelY = S / 2;
   let mouseAbsX = window.innerWidth / 2;
   let animId;
+  const isMobileDevice = "ontouchstart" in window || window.innerWidth < 768;
 
   function onMouseMove(e) {
     const rect = cv.getBoundingClientRect();
@@ -728,6 +729,24 @@ function mostrarBrunoMunari() {
     mouseAbsX = e.clientX;
   }
   document.addEventListener("mousemove", onMouseMove);
+
+  // Mobile: scroll controla Y, touch controla X
+  let lastScrollY = window.scrollY;
+  function onScroll() {
+    const delta = window.scrollY - lastScrollY;
+    lastScrollY = window.scrollY;
+    // Mover los ojos: scroll down → ojos abajo, scroll up → ojos arriba
+    mouseRelY = Math.max(0, Math.min(S, mouseRelY + delta * 0.5));
+  }
+  function onTouchMove(e) {
+    if (e.touches.length > 0) {
+      mouseAbsX = e.touches[0].clientX;
+    }
+  }
+  if (isMobileDevice) {
+    window.addEventListener("scroll", onScroll, { passive: true });
+    document.addEventListener("touchmove", onTouchMove, { passive: true });
+  }
 
   function draw() {
     ctx2d.clearRect(0, 0, S, S);
@@ -813,6 +832,10 @@ function mostrarBrunoMunari() {
     panel.remove();
     cancelAnimationFrame(animId);
     document.removeEventListener("mousemove", onMouseMove);
+    if (isMobileDevice) {
+      window.removeEventListener("scroll", onScroll);
+      document.removeEventListener("touchmove", onTouchMove);
+    }
   }, 10000);
 }
 
@@ -840,12 +863,30 @@ function mostrarBrunoMunariAnclado(anchorId) {
   let mouseRelY = S / 2;
   let mouseAbsX = window.innerWidth / 2;
   let animId;
+  const isMobileDevice = "ontouchstart" in window || window.innerWidth < 768;
 
   function onMouseMove(e) {
     mouseRelY = e.clientY - cv.getBoundingClientRect().top;
     mouseAbsX = e.clientX;
   }
   document.addEventListener("mousemove", onMouseMove);
+
+  // Mobile: scroll controla Y, touch controla X
+  let lastScrollY = window.scrollY;
+  function onScroll() {
+    const delta = window.scrollY - lastScrollY;
+    lastScrollY = window.scrollY;
+    mouseRelY = Math.max(0, Math.min(S, mouseRelY + delta * 0.5));
+  }
+  function onTouchMove(e) {
+    if (e.touches.length > 0) {
+      mouseAbsX = e.touches[0].clientX;
+    }
+  }
+  if (isMobileDevice) {
+    window.addEventListener("scroll", onScroll, { passive: true });
+    document.addEventListener("touchmove", onTouchMove, { passive: true });
+  }
 
   function draw() {
     ctx2d.clearRect(0, 0, S, S);
@@ -914,6 +955,10 @@ function mostrarBrunoMunariAnclado(anchorId) {
   panel._cleanup = () => {
     cancelAnimationFrame(animId);
     document.removeEventListener("mousemove", onMouseMove);
+    if (isMobileDevice) {
+      window.removeEventListener("scroll", onScroll);
+      document.removeEventListener("touchmove", onTouchMove);
+    }
   };
 }
 
