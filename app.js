@@ -13,6 +13,7 @@ const colorAnterior = localStorage.getItem("ultimo_color");
 const colorSesion = colorAnterior === "#000" ? "#000" : "#000";
 
 const LOCAL_MESSAGES_KEY = "naim_editor_messages";
+const MUNARI_ANCHOR_KEY = "munari_anchor_id";
 
 function saveLocalMessages(rows) {
   try {
@@ -453,15 +454,22 @@ function renderConLinks(container, texto) {
   });
 }
 
-function agregarSpan(color, mensaje, id) {
+function agregarSpan(color, mensaje, id, tipo) {
+  if (id && renderedMessageIds.has(id)) return;
+  if (id) renderedMessageIds.add(id);
+
+  if (tipo === "munari") {
+    mostrarBrunoMunariAnclado(id);
+    return;
+  }
+
   mensaje = mensaje.replace(/\u00A0/g, " ").replace(/\u200B/g, "");
   mensaje = mensaje.replace(/\n+$/, "");
   if (mensaje.trim() === "") return;
-  if (id && renderedMessageIds.has(id)) return;
-  if (id) renderedMessageIds.add(id);
   const span = document.createElement("span");
   span.className = "msg";
   span.style.color = color;
+  if (id) span.dataset.id = id;
   renderConLinks(span, mensaje);
   committedEl.appendChild(span);
 }
@@ -469,7 +477,7 @@ function agregarSpan(color, mensaje, id) {
 // Flag para bloquear polling mientras se está guardando
 let pollingBloqueado = false;
 
-async function guardar(mensaje) {
+async function guardar(mensaje, tipo) {
   const now = new Date();
   const fecha = now.toISOString().slice(0, 10);
   const hora = now.toTimeString().slice(0, 8);
@@ -484,16 +492,22 @@ async function guardar(mensaje) {
         Authorization: "Bearer " + SUPABASE_KEY,
         Prefer: "return=representation",
       },
-      body: JSON.stringify({ mensaje, fecha, hora, color: colorSesion }),
+      body: JSON.stringify({
+        mensaje,
+        fecha,
+        hora,
+        color: colorSesion,
+        ...(tipo ? { tipo } : {}),
+      }),
     });
     if (res.ok) {
       const rows = await res.json();
       const id = rows?.[0]?.id;
       if (id && id > ultimoId) ultimoId = id;
-      agregarSpan(colorSesion, mensaje, id);
+      agregarSpan(colorSesion, mensaje, id, tipo);
       const localRows = loadLocalMessages();
       if (id && !localRows.some((item) => item.id === id)) {
-        localRows.push({ id, mensaje, color: colorSesion });
+        localRows.push({ id, mensaje, color: colorSesion, tipo });
         saveLocalMessages(localRows);
       }
       setCanvasImage(true);
@@ -516,10 +530,12 @@ async function guardar(mensaje) {
         guardadoEstaSesion = true;
         localStorage.setItem("ultimo_color", colorSesion);
       }
+      return id || null;
     } else {
       const txt = await res.text();
       setStatus("✗ error: " + txt, "#e53935");
       console.error(txt);
+      return null;
     }
   } catch (e) {
     setStatus("✗ sin conexión. El mensaje se guarda localmente.", "#e53935");
@@ -528,6 +544,7 @@ async function guardar(mensaje) {
     saveLocalMessages(localRows);
     agregarSpan(colorSesion, mensaje);
     console.error(e);
+    return null;
   } finally {
     pollingBloqueado = false;
   }
@@ -553,16 +570,56 @@ function insertTextAtCursor(text) {
 // ========================
 
 const CANVAS_IMAGES = [
-  "img/santaolalla.png",
-  "img/chispas.png",
-  "img/ventana.png",
-  "img/baldio.png",
-  "img/jirafa.png",
-  "img/gatoblanco.png",
-  "img/compu.jpg",
+  "img/008000.PNG",
   "img/Qualquer_Coisa.jpg",
   "img/YMOCOVER.jpeg",
+  "img/allplastic.PNG",
+  "img/baldio.png",
+  "img/bart.PNG",
+  "img/bart2.PNG",
+  "img/boca.jpg",
+  "img/cafe.jpg",
+  "img/capusotto.PNG",
+  "img/chispas.png",
+  "img/chispi.PNG",
+  "img/chocolino.png",
+  "img/compu.jpg",
+  "img/cosa.PNG",
+  "img/delavega.png",
+  "img/dragon.PNG",
+  "img/duendes.jpg",
+  "img/enano.PNG",
+  "img/enano2.PNG",
+  "img/existenz.jpg",
+  "img/felipe.jpg",
+  "img/flor.jpg",
+  "img/flores.jpg",
+  "img/gato.PNG",
+  "img/gatoabeja.JPG",
+  "img/gatoblanco.png",
+  "img/gatopc.jpg",
+  "img/girasol.png",
+  "img/godzilla.jpg",
+  "img/guaso.jpg",
+  "img/icon.jpg",
+  "img/jirafa.png",
+  "img/kufi.png",
+  "img/leon.PNG",
+  "img/maiz.png",
+  "img/minion.JPG",
+  "img/okapi.jpg",
   "img/osito.png",
+  "img/pantera.jpg",
+  "img/pikacho.png",
+  "img/rinoceronte.PNG",
+  "img/santaolalla.png",
+  "img/sapos.png",
+  "img/sms_of_death.jpg",
+  "img/vaca.PNG",
+  "img/ventana.png",
+  "img/vibra.JPG",
+  "img/wachin.jpg",
+  "img/zorritos.jpg",
 ];
 
 const btnCanvas = document.getElementById("btn-canvas");
@@ -629,13 +686,241 @@ setCanvasImage(false).then(() => {
 });
 
 // ========================
-// COMANDOS
+// BRUNO MUNARI
 // ========================
+
+// Tamaño responsivo del canvas Munari según breakpoints
+function munariSize() {
+  const w = window.innerWidth;
+  if (w >= 1920) return 130;
+  if (w >= 1440) return 140;
+  if (w >= 1024) return 150;
+  if (w >= 768) return 160;
+  return 120;
+}
+
+function mostrarBrunoMunari() {
+  // Si ya hay uno, lo quitamos
+  const existing = document.getElementById("munari-panel");
+  if (existing) existing.remove();
+
+  const panel = document.createElement("div");
+  panel.id = "munari-panel";
+
+  const S = munariSize();
+  const cv = document.createElement("canvas");
+  cv.width = S;
+  cv.height = S;
+  panel.appendChild(cv);
+  document.body.appendChild(panel);
+
+  const ctx2d = cv.getContext("2d");
+  const sc = S / 500;
+  let mouseRelY = S / 2;
+  let mouseAbsX = window.innerWidth / 2;
+  let animId;
+
+  function onMouseMove(e) {
+    const rect = cv.getBoundingClientRect();
+    mouseRelY = e.clientY - rect.top;
+    mouseAbsX = e.clientX;
+  }
+  document.addEventListener("mousemove", onMouseMove);
+
+  function draw() {
+    ctx2d.clearRect(0, 0, S, S);
+    ctx2d.fillStyle = "#dcdcdc";
+    ctx2d.fillRect(0, 0, S, S);
+    ctx2d.strokeStyle = "#000";
+    ctx2d.lineWidth = 5 * sc;
+    ctx2d.lineCap = "round";
+
+    function line(x1, y1, x2, y2) {
+      ctx2d.beginPath();
+      ctx2d.moveTo(x1 * sc, y1 * sc);
+      ctx2d.lineTo(x2 * sc, y2 * sc);
+      ctx2d.stroke();
+    }
+
+    [50, 150, 250, 350, 450].forEach((x) => line(x, 50, x, 450));
+    [50, 150, 250, 350, 450].forEach((y) => line(50, y, 450, y));
+    line(50, 150, 150, 50);
+    line(150, 50, 250, 150);
+    line(250, 150, 350, 50);
+    line(350, 50, 450, 150);
+    line(150, 250, 250, 350);
+    line(250, 350, 350, 250);
+    line(150, 400, 350, 400);
+
+    // El mouse Y controla la posición vertical (mapeado a y=70..250 en espacio 500)
+    const mouseY500 = 70 + (mouseRelY / S) * (250 - 70);
+    const clampedY = Math.max(70, Math.min(250, mouseY500));
+
+    // El mouse X determina dirección horizontal (relativo al centro de pantalla)
+    const rect = cv.getBoundingClientRect();
+    const panelCenterX = rect.left + rect.width / 2;
+    const rawX = (mouseAbsX - panelCenterX) / (rect.width * 4);
+    const clampedX = Math.max(-1, Math.min(1, rawX));
+    const DEAD_ZONE = 0.15;
+
+    // Posición de cada ojo: SIEMPRE sobre una línea de la grilla.
+    // Fase A (y < 150): baja recto por su columna.
+    // Fase B (y >= 150):
+    //   - mouse centrado (|x| < DEAD_ZONE): sigue bajando por la columna hasta y=250
+    //   - mouse a los lados: se queda FIJO en y=150 y se mueve en X sobre esa línea
+    function eyePos(colX) {
+      if (clampedY < 150) {
+        // Fase A: carril vertical
+        return { x: colX * sc, y: clampedY * sc };
+      }
+      // Fase B
+      if (Math.abs(clampedX) < DEAD_ZONE) {
+        // Sigue recto por la columna
+        return { x: colX * sc, y: clampedY * sc };
+      }
+      // Dobla en y=150 y rueda horizontalmente
+      const tX = Math.min(
+        1,
+        (Math.abs(clampedX) - DEAD_ZONE) / (1 - DEAD_ZONE),
+      );
+      const goingLeft = clampedX < 0;
+      const xMin = colX === 150 ? 70 : 260;
+      const xMax = colX === 150 ? 240 : 430;
+      const xTarget = goingLeft ? xMin : xMax;
+      const ex = colX + tX * (xTarget - colX);
+      return { x: ex * sc, y: 150 * sc }; // y fijo en 150, siempre sobre la línea
+    }
+
+    const leftEye = eyePos(150);
+    const rightEye = eyePos(350);
+
+    ctx2d.fillStyle = "#000";
+    ctx2d.beginPath();
+    ctx2d.arc(leftEye.x, leftEye.y, 15 * sc, 0, Math.PI * 2);
+    ctx2d.fill();
+    ctx2d.beginPath();
+    ctx2d.arc(rightEye.x, rightEye.y, 15 * sc, 0, Math.PI * 2);
+    ctx2d.fill();
+
+    animId = requestAnimationFrame(draw);
+  }
+
+  draw();
+
+  setTimeout(() => {
+    panel.remove();
+    cancelAnimationFrame(animId);
+    document.removeEventListener("mousemove", onMouseMove);
+  }, 10000);
+}
+
+function mostrarBrunoMunariAnclado(anchorId) {
+  const existing = document.getElementById("munari-panel-anclado");
+  if (existing) {
+    existing._cleanup && existing._cleanup();
+    existing.remove();
+  }
+
+  const panel = document.createElement("div");
+  panel.id = "munari-panel-anclado";
+  if (anchorId) panel.dataset.id = anchorId;
+
+  const S = munariSize();
+  const cv = document.createElement("canvas");
+  cv.width = S;
+  cv.height = S;
+  panel.appendChild(cv);
+
+  committedEl.appendChild(panel);
+
+  const ctx2d = cv.getContext("2d");
+  const sc = S / 500;
+  let mouseRelY = S / 2;
+  let mouseAbsX = window.innerWidth / 2;
+  let animId;
+
+  function onMouseMove(e) {
+    mouseRelY = e.clientY - cv.getBoundingClientRect().top;
+    mouseAbsX = e.clientX;
+  }
+  document.addEventListener("mousemove", onMouseMove);
+
+  function draw() {
+    ctx2d.clearRect(0, 0, S, S);
+    ctx2d.fillStyle = "#dcdcdc";
+    ctx2d.fillRect(0, 0, S, S);
+    ctx2d.strokeStyle = "#000";
+    ctx2d.lineWidth = 5 * sc;
+    ctx2d.lineCap = "round";
+
+    function line(x1, y1, x2, y2) {
+      ctx2d.beginPath();
+      ctx2d.moveTo(x1 * sc, y1 * sc);
+      ctx2d.lineTo(x2 * sc, y2 * sc);
+      ctx2d.stroke();
+    }
+
+    [50, 150, 250, 350, 450].forEach((x) => line(x, 50, x, 450));
+    [50, 150, 250, 350, 450].forEach((y) => line(50, y, 450, y));
+    line(50, 150, 150, 50);
+    line(150, 50, 250, 150);
+    line(250, 150, 350, 50);
+    line(350, 50, 450, 150);
+    line(150, 250, 250, 350);
+    line(250, 350, 350, 250);
+    line(150, 400, 350, 400);
+
+    const mouseY500 = 70 + (mouseRelY / S) * (250 - 70);
+    const clampedY = Math.max(70, Math.min(250, mouseY500));
+
+    const rect = cv.getBoundingClientRect();
+    const panelCenterX = rect.left + rect.width / 2;
+    const rawX = (mouseAbsX - panelCenterX) / (rect.width * 4);
+    const clampedX = Math.max(-1, Math.min(1, rawX));
+    const DEAD_ZONE = 0.15;
+
+    function eyePos(colX) {
+      if (clampedY < 150) return { x: colX * sc, y: clampedY * sc };
+      if (Math.abs(clampedX) < DEAD_ZONE)
+        return { x: colX * sc, y: clampedY * sc };
+      const tX = Math.min(
+        1,
+        (Math.abs(clampedX) - DEAD_ZONE) / (1 - DEAD_ZONE),
+      );
+      const goingLeft = clampedX < 0;
+      const xMin = colX === 150 ? 70 : 260;
+      const xMax = colX === 150 ? 240 : 430;
+      const ex = colX + tX * ((goingLeft ? xMin : xMax) - colX);
+      return { x: ex * sc, y: 150 * sc };
+    }
+
+    const leftEye = eyePos(150);
+    const rightEye = eyePos(350);
+    ctx2d.fillStyle = "#000";
+    ctx2d.beginPath();
+    ctx2d.arc(leftEye.x, leftEye.y, 15 * sc, 0, Math.PI * 2);
+    ctx2d.fill();
+    ctx2d.beginPath();
+    ctx2d.arc(rightEye.x, rightEye.y, 15 * sc, 0, Math.PI * 2);
+    ctx2d.fill();
+
+    animId = requestAnimationFrame(draw);
+  }
+
+  draw();
+
+  panel._cleanup = () => {
+    cancelAnimationFrame(animId);
+    document.removeEventListener("mousemove", onMouseMove);
+  };
+}
 
 const COMANDOS = {
   "/creadores":
     "Creado por <a href='https://agustint96.github.io' target='_blank'>Agustín Tardella</a> y <a href='https://interjuegos.neocities.org/' target='_blank'>Naim Goldraij</a>",
-  "/girar": null, // manejado por lógica especial
+  "/girar": null,
+  "/brunomunari": null,
+  "/brunomunariporsiempre": null,
 };
 
 function girarTexto() {
@@ -841,12 +1126,31 @@ async function confirmar() {
 
   // Verificar si es un comando
   const mensajeLimpio = mensaje.trim().toLowerCase();
+
+  // Caso especial: /brunomunariporsiempre — guarda el mensaje sin el comando
+  if (mensajeLimpio.startsWith("/brunomunariporsiempre")) {
+    const mensajeSinComando = mensaje
+      .trim()
+      .slice("/brunomunariporsiempre".length)
+      .trim();
+    setEditorText("");
+    updateHeight();
+    focusEditorAtEnd();
+    guardando = true;
+    guardar(mensajeSinComando || " ", "munari").finally(() => {
+      guardando = false;
+    });
+    return;
+  }
+
   if (mensajeLimpio in COMANDOS) {
     setEditorText("");
     updateHeight();
     focusEditorAtEnd();
     if (mensajeLimpio === "/girar") {
       girarTexto();
+    } else if (mensajeLimpio === "/brunomunari") {
+      mostrarBrunoMunari();
     } else if (COMANDOS[mensajeLimpio]) {
       mostrarHintPersonalizado(COMANDOS[mensajeLimpio]);
     }
@@ -929,7 +1233,7 @@ async function cargar() {
     committedEl.innerHTML = "";
     ultimoId = 0;
     localRows.forEach((r) => {
-      agregarSpan(r.color || "#000", r.mensaje, r.id);
+      agregarSpan(r.color || "#000", r.mensaje, r.id, r.tipo);
       if (r.id > ultimoId) ultimoId = r.id;
     });
     setStatus("cargando desde caché...", "#888");
@@ -937,7 +1241,7 @@ async function cargar() {
 
   try {
     const res = await fetch(
-      SUPABASE_URL + "/rest/v1/notas?select=id,mensaje,color&order=id.asc",
+      SUPABASE_URL + "/rest/v1/notas?select=id,mensaje,color,tipo&order=id.asc",
       {
         headers: {
           apikey: SUPABASE_KEY,
@@ -951,7 +1255,7 @@ async function cargar() {
         committedEl.innerHTML = "";
       }
       rows.forEach((r) => {
-        agregarSpan(r.color || "#000", r.mensaje, r.id);
+        agregarSpan(r.color || "#000", r.mensaje, r.id, r.tipo);
         if (r.id > ultimoId) ultimoId = r.id;
       });
       saveLocalMessages(rows);
@@ -991,7 +1295,7 @@ async function polling() {
   try {
     const res = await fetch(
       SUPABASE_URL +
-        `/rest/v1/notas?select=id,mensaje,color&id=gt.${ultimoId}&order=id.asc`,
+        `/rest/v1/notas?select=id,mensaje,color,tipo&id=gt.${ultimoId}&order=id.asc`,
       {
         headers: {
           apikey: SUPABASE_KEY,
@@ -1004,7 +1308,7 @@ async function polling() {
       if (rows.length > 0) {
         const alFinal = estaAlFinal();
         rows.forEach((r) => {
-          agregarSpan(r.color || "#000", r.mensaje, r.id);
+          agregarSpan(r.color || "#000", r.mensaje, r.id, r.tipo);
           if (r.id > ultimoId) ultimoId = r.id;
         });
         if (alFinal) {
