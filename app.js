@@ -814,6 +814,7 @@ const COMANDOS = {
     "Creado por <a href='https://agustint96.github.io' target='_blank'>Agustín Tardella</a> y <a href='https://interjuegos.neocities.org/' target='_blank'>Naim Goldraij</a>",
   "/girar": null,
   "/brunomunari": null,
+  "/pajarosvolando": null,
 };
 
 function girarTexto() {
@@ -876,6 +877,226 @@ function girarTexto() {
     },
     4000 + 600 + 200,
   );
+}
+
+// ========================
+// PÁJAROS VOLANDO
+// ========================
+
+function pajarosVolando() {
+  const vSpans = [];
+
+  function envolverVs(nodo) {
+    if (nodo.nodeType === Node.TEXT_NODE) {
+      const texto = nodo.nodeValue;
+      if (!texto || !/[vV]/.test(texto)) return;
+      const frag = document.createDocumentFragment();
+      for (const char of texto) {
+        if (char === "v" || char === "V") {
+          const span = document.createElement("span");
+          span.className = "pajaro-v";
+          span.textContent = char;
+          frag.appendChild(span);
+          vSpans.push(span);
+        } else {
+          frag.appendChild(document.createTextNode(char));
+        }
+      }
+      nodo.parentNode.replaceChild(frag, nodo);
+    } else if (
+      nodo.nodeType === Node.ELEMENT_NODE &&
+      nodo.nodeName !== "SCRIPT" &&
+      nodo.nodeName !== "STYLE"
+    ) {
+      Array.from(nodo.childNodes).forEach(envolverVs);
+    }
+  }
+
+  envolverVs(committedEl);
+
+  if (!vSpans.length) return;
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  // Ocultar todas desde el principio
+  vSpans.forEach((span) => {
+    span.style.visibility = "hidden";
+  });
+
+  // Canvas fijo cubriendo el viewport
+  const cvs = document.createElement("canvas");
+  cvs.style.cssText =
+    "position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:9999;";
+  cvs.width = vw;
+  cvs.height = vh;
+  document.body.appendChild(cvs);
+  const cx = cvs.getContext("2d");
+
+  const DURATION = 10000;
+  const startTs = performance.now();
+
+  // Pool de pájaros activos
+  const birds = [];
+  const launched = new Set();
+
+  // Punto de reunión: centro-derecha del viewport actual, se recalcula por grupo
+  function getGatherPoint() {
+    return {
+      gx: vw * 0.62 + (Math.random() - 0.5) * vw * 0.12,
+      gy: vh * 0.3 + (Math.random() - 0.5) * vh * 0.1,
+    };
+  }
+
+  function makeBird(span, gx, gy, groupDelay) {
+    const rect = span.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      vx: 0,
+      vy: 0,
+      gx: gx + (Math.random() - 0.5) * 60, // dispersión dentro del punto
+      gy: gy + (Math.random() - 0.5) * 30,
+      flapOffset: Math.random() * Math.PI * 2,
+      flapSpeed: 170 + Math.random() * 60,
+      size: 11 + Math.random() * 5,
+      t: 0,
+      delay: groupDelay + Math.random() * 80, // pequeño escalonado dentro del grupo
+      phase: "gather", // gather → flock → done
+    };
+  }
+
+  // Lanzar un grupo de spans que acaban de entrar al viewport
+  function launchGroup(spans) {
+    const { gx, gy } = getGatherPoint();
+    spans.forEach((span, i) => {
+      launched.add(span);
+      observer.unobserve(span);
+      birds.push(makeBird(span, gx, gy, i * 30));
+    });
+  }
+
+  // IntersectionObserver con rootMargin 0 — solo dispara cuando realmente entra
+  let pendingGroup = [];
+  let groupTimer = null;
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting && !launched.has(entry.target)) {
+          pendingGroup.push(entry.target);
+        }
+      });
+      // Agrupar entradas que llegan juntas en el mismo tick del observer
+      if (pendingGroup.length > 0) {
+        clearTimeout(groupTimer);
+        groupTimer = setTimeout(() => {
+          if (pendingGroup.length > 0) {
+            launchGroup(pendingGroup);
+            pendingGroup = [];
+          }
+        }, 80);
+      }
+    },
+    { threshold: 0.1, rootMargin: "0px" },
+  );
+
+  vSpans.forEach((span) => observer.observe(span));
+
+  function cleanup() {
+    observer.disconnect();
+    clearTimeout(groupTimer);
+    cancelAnimationFrame(animId);
+    cvs.remove();
+    vSpans.forEach((span) => {
+      span.style.visibility = "";
+      const txt = document.createTextNode(span.textContent);
+      if (span.parentNode) span.parentNode.replaceChild(txt, span);
+    });
+    committedEl.normalize();
+  }
+
+  let lastTs = null;
+  let animId;
+
+  function loop(ts) {
+    if (!lastTs) lastTs = ts;
+    const dt = Math.min(ts - lastTs, 50);
+    lastTs = ts;
+    const elapsed = ts - startTs;
+
+    cx.clearRect(0, 0, cvs.width, cvs.height);
+
+    birds.forEach((b) => {
+      if (b.phase === "done") return;
+      if (elapsed < b.delay) return;
+
+      b.t += dt;
+
+      if (b.phase === "gather") {
+        // Volar hacia el punto de reunión
+        const dx = b.gx - b.x;
+        const dy = b.gy - b.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 6) {
+          b.phase = "flock";
+        } else {
+          const accel = Math.min(1, b.t / 350);
+          b.vx += (dx / dist) * 0.4 * accel;
+          b.vy += (dy / dist) * 0.4 * accel;
+          const spd = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+          const maxSpd = 3.8;
+          if (spd > maxSpd) {
+            b.vx = (b.vx / spd) * maxSpd;
+            b.vy = (b.vy / spd) * maxSpd;
+          }
+          b.x += b.vx;
+          b.y += b.vy;
+        }
+      } else if (b.phase === "flock") {
+        // Volar hacia arriba-derecha saliendo del viewport
+        const angle = -Math.PI / 4 + (Math.random() - 0.5) * 0.01;
+        const targetVx = Math.cos(angle) * 4;
+        const targetVy = Math.sin(angle) * 4;
+        b.vx += (targetVx - b.vx) * 0.06;
+        b.vy += (targetVy - b.vy) * 0.06;
+        b.x += b.vx;
+        b.y += b.vy;
+        if (b.x > cvs.width + 60 || b.y < -60) b.phase = "done";
+      }
+
+      if (b.phase === "done") return;
+
+      // Dibujar alas
+      const flap = Math.sin(b.t / b.flapSpeed + b.flapOffset);
+      const flapR = Math.sin(b.t / b.flapSpeed + b.flapOffset + 0.3);
+      const ws = b.size;
+      cx.save();
+      cx.strokeStyle = "rgb(20,18,12)";
+      cx.lineWidth = 1.5;
+      cx.lineCap = "round";
+      cx.beginPath();
+      cx.moveTo(b.x - ws * 0.5, b.y - ws * 0.38 * (0.5 + 0.5 * flap));
+      cx.quadraticCurveTo(b.x - ws * 0.12, b.y - 1, b.x, b.y);
+      cx.quadraticCurveTo(
+        b.x + ws * 0.12,
+        b.y - 1,
+        b.x + ws * 0.5,
+        b.y - ws * 0.38 * (0.5 + 0.5 * flapR),
+      );
+      cx.stroke();
+      cx.restore();
+    });
+
+    if (elapsed >= DURATION) {
+      cleanup();
+      return;
+    }
+
+    animId = requestAnimationFrame(loop);
+  }
+
+  animId = requestAnimationFrame(loop);
 }
 
 function mostrarHintPersonalizado(texto) {
@@ -1028,6 +1249,8 @@ async function confirmar() {
       girarTexto();
     } else if (mensajeLimpio === "/brunomunari") {
       mostrarBrunoMunari();
+    } else if (mensajeLimpio === "/pajarosvolando") {
+      pajarosVolando();
     } else if (COMANDOS[mensajeLimpio]) {
       mostrarHintPersonalizado(COMANDOS[mensajeLimpio]);
     }
