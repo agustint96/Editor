@@ -62,9 +62,9 @@ body {
   line-height: 1.7;
   color: rgba(0, 0, 0, 0.65);
   outline: none;
-  min-width: 1ch;
-  vertical-align: top;
+  /* min-width removido: causaba gap visual cuando el editor estaba vacío */
   caret-color: auto;
+  /* vertical-align: top puede causar desalineación con committed en algunos browsers */
 }
 
 @keyframes blink {
@@ -144,8 +144,7 @@ body {
   }
 
   #editor {
-    min-width: 1ch;
-    vertical-align: baseline;
+    /* sin min-width ni vertical-align para que fluya exactamente después del committed */
   }
 }
 

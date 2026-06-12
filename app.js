@@ -37,116 +37,118 @@ function loadLocalMessages() {
 let touchStartX = 0;
 let touchStartY = 0;
 let touchMoved = false;
-let touchPendingFocus = false;
 
 document.addEventListener("pointerdown", (e) => {
   const target = e.target;
 
   if (e.pointerType === "touch") {
     touchMoved = false;
-    touchPendingFocus = false;
     touchStartX = e.clientX;
     touchStartY = e.clientY;
   }
 
-  // Ignorar botones, canvas y links
+  // Ignorar canvas y links siempre
   if (target.closest("#btn-canvas") || target.closest("a")) return;
 
-  // Si toca directo sobre el editor, dejar que el browser maneje el cursor
-  if (target === editor) return;
+  // Si toca el editor directamente: el browser ya maneja el cursor
+  if (target === editor || target.closest("#editor")) return;
 
-  // Si toca sobre committed: dejar que el browser maneje libremente (scroll, selección, lectura)
-  if (target.closest("#committed")) {
-    return;
+  // Sobre committed: permitir scroll libre, enfocar al soltar (ver pointerup)
+  if (target.closest("#committed")) return;
+
+  // Zona vacía en desktop: enfocar de inmediato
+  if (e.pointerType !== "touch") {
+    e.preventDefault();
+    focusEditorAtEnd();
   }
-
-  if (e.pointerType === "touch") {
-    // Solo pendiente de focus si ya está al final
-    if (estaAlFinal()) touchPendingFocus = true;
-    return;
-  }
-
-  // Click en zona vacía en desktop: solo enfocar si ya está al final
-  if (!estaAlFinal()) return;
-  e.preventDefault();
-  focusEditorAtEnd();
+  // En touch: esperar pointerup para distinguir tap de scroll
 });
 
 document.addEventListener("pointermove", (e) => {
-  if (e.pointerType !== "touch" || !touchPendingFocus) return;
+  if (e.pointerType !== "touch") return;
   const dx = Math.abs(e.clientX - touchStartX);
   const dy = Math.abs(e.clientY - touchStartY);
-  if (dx > 10 || dy > 10) {
-    touchMoved = true;
-    touchPendingFocus = false;
-  }
+  if (dx > 8 || dy > 8) touchMoved = true;
 });
 
 document.addEventListener("pointerup", (e) => {
-  if (e.pointerType !== "touch" || !touchPendingFocus) return;
-  if (!touchMoved) {
-    e.preventDefault();
-    setTimeout(() => {
-      focusEditorAtEnd();
-    }, 60);
-  }
-  touchPendingFocus = false;
+  if (e.pointerType !== "touch") return;
+  if (touchMoved) return; // fue scroll, no tap
+
+  const target = e.target;
+  if (target.closest("#btn-canvas") || target.closest("a")) return;
+  if (target === editor || target.closest("#editor")) return;
+
+  // Tap en cualquier parte de la página → enfocar editor
+  setTimeout(() => focusEditorAtEnd(), 50);
 });
 
 function getEditorText() {
-  // Recorrer el DOM del editor para extraer texto preservando saltos de línea
-  // correctamente, sin depender de innerText que puede romper con divs generados
-  // por el browser al presionar Enter después de un link.
-  // isRoot indica que estamos en el nodo raíz del editor, donde el browser
-  // siempre agrega un BR o DIV vacío final como "caret holder" (no es texto real).
-  function extractText(node, isRoot) {
-    let text = "";
-    const children = Array.from(node.childNodes);
-    children.forEach((child, i) => {
-      const isLast = i === children.length - 1;
-      if (child.nodeType === Node.TEXT_NODE) {
-        text += child.nodeValue;
-      } else if (child.nodeName === "BR") {
-        // Ignorar el BR final del nodo raíz: es el caret holder del browser.
-        if (isRoot && isLast) return;
-        text += "\n";
-      } else if (child.nodeName === "DIV" || child.nodeName === "P") {
-        const inner = extractText(child, false);
-        // Ignorar DIV/P vacío al final del raíz (solo tenía el BR de caret holder).
-        if (isRoot && isLast && inner === "") return;
-        text += "\n" + inner;
-      } else {
-        text += extractText(child, false);
-      }
-    });
-    return text;
-  }
-  return extractText(editor, true)
-    .replace(/\u00A0/g, " ")
-    .replace(/\u200B/g, "");
+  // Estrategia: clonar el editor, normalizar todos los DIV/P a saltos de línea,
+  // luego leer el texto plano. Esto cubre todos los casos que genera el browser:
+  // - DIV vacíos al final (caret holder de Chrome/Safari)
+  // - P generados por algunos browsers
+  // - BR sueltos
+  // - Texto directo
+  const clone = editor.cloneNode(true);
+
+  // Convertir cada DIV y P en un salto de línea + su contenido
+  // Hacerlo de adentro hacia afuera (hijos primero)
+  const blocks = clone.querySelectorAll("div, p");
+  blocks.forEach((block) => {
+    const br = document.createTextNode("\n");
+    block.parentNode.insertBefore(br, block);
+    while (block.firstChild) {
+      block.parentNode.insertBefore(block.firstChild, block);
+    }
+    block.remove();
+  });
+
+  // Convertir BR en saltos de línea de texto
+  clone.querySelectorAll("br").forEach((br) => {
+    br.parentNode.replaceChild(document.createTextNode("\n"), br);
+  });
+
+  let text = clone.textContent || "";
+  // Limpiar caracteres especiales que el browser inserta
+  text = text.replace(/\u00A0/g, " ").replace(/\u200B/g, "");
+  // El browser siempre agrega un \n final como caret holder — quitarlo
+  text = text.replace(/\n$/, "");
+  return text;
 }
 
 function setEditorText(text) {
-  editor.innerText = text;
+  // Limpiar el editor y reconstruir con nodos de texto + BR
+  // En vez de usar innerText (que puede generar estructura inesperada al re-setear)
+  editor.innerHTML = "";
+  if (!text) return;
+  const lines = text.split("\n");
+  lines.forEach((line, i) => {
+    if (line) editor.appendChild(document.createTextNode(line));
+    if (i < lines.length - 1) editor.appendChild(document.createElement("br"));
+  });
 }
 
+// Forzar que el browser use BR en vez de DIV/P al presionar Enter
+try {
+  document.execCommand("defaultParagraphSeparator", false, "br");
+} catch (e) {}
+
 function focusEditorAtEnd() {
-  editor.focus();
+  editor.focus({ preventScroll: true });
   const sel = window.getSelection();
   if (!sel) return;
+  // Si el editor está vacío, asegurarse de que tiene al menos un nodo de texto
+  if (!editor.firstChild) {
+    editor.appendChild(document.createTextNode(""));
+  }
   const range = document.createRange();
   range.selectNodeContents(editor);
-  range.collapse(false);
+  range.collapse(false); // colapsar al final
   sel.removeAllRanges();
   sel.addRange(range);
   requestAnimationFrame(() => {
-    if (editor.scrollIntoView) {
-      editor.scrollIntoView({
-        block: "center",
-        inline: "nearest",
-        behavior: "smooth",
-      });
-    }
+    scrollToCaret();
   });
 }
 
@@ -160,13 +162,18 @@ function scrollToCaret() {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return;
     const rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return; // rango colapsado sin posición real
     const vvh = window.visualViewport
       ? window.visualViewport.height
       : window.innerHeight;
-    const margin = 100;
-    if (rect.bottom > vvh - margin) {
-      const extra = rect.bottom - (vvh - margin);
-      window.scrollTo({ top: window.scrollY + extra, behavior: "smooth" });
+    const marginBottom = 120;
+    const marginTop = 60;
+    if (rect.bottom > vvh - marginBottom) {
+      const extra = rect.bottom - (vvh - marginBottom);
+      window.scrollBy({ top: extra, behavior: "smooth" });
+    } else if (rect.top < marginTop) {
+      const extra = rect.top - marginTop;
+      window.scrollBy({ top: extra, behavior: "smooth" });
     }
   });
 }
@@ -445,8 +452,13 @@ function renderConLinks(container, texto) {
         if (linea) {
           container.appendChild(document.createTextNode(linea));
         }
-        // Agregar <br> después de cada línea excepto la última
+        // <br> después de cada \n — incluso el último si el mensaje termina en \n
+        // (eso hace que el editor continúe en la línea correcta)
         if (idx < lineas.length - 1) {
+          container.appendChild(document.createElement("br"));
+        } else if (idx === lineas.length - 1 && linea === "") {
+          // El mensaje termina en \n: agregar <br> final para que el editor
+          // empiece en la línea siguiente
           container.appendChild(document.createElement("br"));
         }
       });
@@ -459,7 +471,7 @@ function agregarSpan(color, mensaje, id, tipo) {
   if (id) renderedMessageIds.add(id);
 
   mensaje = mensaje.replace(/\u00A0/g, " ").replace(/\u200B/g, "");
-  mensaje = mensaje.replace(/\n+$/, "");
+  // No stripear \n finales: el usuario puede querer líneas en blanco al final del mensaje
   if (mensaje.trim() === "") return;
   const span = document.createElement("span");
   span.className = "msg";
@@ -1012,8 +1024,7 @@ async function confirmar() {
   }
 
   // Editor visible con texto → guardar
-  // Trim trailing newlines (browser caret holder artifact)
-  mensaje = mensaje.replace(/\n+$/, "");
+  // getEditorText ya elimina el \n del caret holder del browser
   if (!mensaje.trim()) return;
 
   // Verificar si es un comando
@@ -1035,8 +1046,9 @@ async function confirmar() {
 
   guardando = true; // set synchronously before any await to block re-entry
   setEditorText("");
+  editor.innerHTML = ""; // doble limpieza para asegurar que no queden nodos residuales
   updateHeight();
-  focusEditorAtEnd();
+  requestAnimationFrame(() => focusEditorAtEnd());
   guardar(mensaje).finally(() => {
     guardando = false;
   });
@@ -1081,6 +1093,29 @@ editor.addEventListener("keydown", (e) => {
   if (e.key === "Tab") {
     e.preventDefault();
     insertTextAtCursor(TAB);
+  }
+  // Interceptar Enter para garantizar que el browser inserte <br> y nunca <div>/<p>
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    // Insertar BR manualmente en la posición del cursor
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const br = document.createElement("br");
+      range.insertNode(br);
+      // Después del BR necesitamos un nodo de texto vacío para que el cursor
+      // se posicione correctamente; si el BR es el último nodo, el browser
+      // puede confundirse.
+      const after = document.createTextNode("");
+      br.parentNode.insertBefore(after, br.nextSibling);
+      range.setStartAfter(br);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    updateHeight();
+    scrollToCaret();
   }
   if (e.key === "Enter" && e.shiftKey && !("ontouchstart" in window)) {
     e.preventDefault();
@@ -1127,9 +1162,10 @@ async function cargar() {
     );
     if (res.ok) {
       const rows = await res.json();
-      if (!localRows.length) {
-        committedEl.innerHTML = "";
-      }
+      // Limpiar siempre antes de renderizar la respuesta definitiva del server
+      committedEl.innerHTML = "";
+      renderedMessageIds.clear();
+      ultimoId = 0;
       rows.forEach((r) => {
         agregarSpan(r.color || "#000", r.mensaje, r.id, r.tipo);
         if (r.id > ultimoId) ultimoId = r.id;
@@ -1141,7 +1177,10 @@ async function cargar() {
           top: document.body.scrollHeight,
           behavior: "instant",
         });
-        focusEditorAtEnd();
+        // Esperar un frame más para que el scroll se aplique antes del focus
+        requestAnimationFrame(() => {
+          focusEditorAtEnd();
+        });
       });
     } else {
       const txt = await res.text();
@@ -1158,10 +1197,16 @@ async function cargar() {
         if (r.id && r.id > ultimoId) ultimoId = r.id;
       });
       setStatus("Offline. Mostrando caché local.", "#e53935");
+      requestAnimationFrame(() => {
+        window.scrollTo({
+          top: document.body.scrollHeight,
+          behavior: "instant",
+        });
+        requestAnimationFrame(() => focusEditorAtEnd());
+      });
     } else {
       setStatus("✗ sin conexión. No hay datos locales.", "#e53935");
     }
-    editor.focus();
     updateHeight();
   }
 }
