@@ -38,146 +38,116 @@ function loadLocalMessages() {
 let touchStartX = 0;
 let touchStartY = 0;
 let touchMoved = false;
-let lastTapTime = 0;
-let lastTapTarget = null;
-const DOUBLE_TAP_MS = 350; // ventana de tiempo para doble tap
+let touchPendingFocus = false;
 
 document.addEventListener("pointerdown", (e) => {
   const target = e.target;
 
   if (e.pointerType === "touch") {
     touchMoved = false;
+    touchPendingFocus = false;
     touchStartX = e.clientX;
     touchStartY = e.clientY;
   }
 
-  // Ignorar canvas y links siempre
+  // Ignorar botones, canvas y links
   if (target.closest("#btn-canvas") || target.closest("a")) return;
 
-  // Si toca el editor directamente: el browser ya maneja el cursor
-  if (target === editor || target.closest("#editor")) return;
+  // Si toca directo sobre el editor, dejar que el browser maneje el cursor
+  if (target === editor) return;
 
-  // Sobre committed: permitir scroll y lectura libre
-  if (target.closest("#committed")) return;
-
-  // Zona vacía en desktop: enfocar de inmediato
-  if (e.pointerType !== "touch") {
-    e.preventDefault();
-    focusEditorAtEnd();
+  // Si toca sobre committed: dejar que el browser maneje libremente (scroll, selección, lectura)
+  if (target.closest("#committed")) {
+    return;
   }
-  // En touch: esperar pointerup para detectar doble tap
+
+  if (e.pointerType === "touch") {
+    // Solo pendiente de focus si ya está al final
+    if (estaAlFinal()) touchPendingFocus = true;
+    return;
+  }
+
+  // Click en zona vacía en desktop: solo enfocar si ya está al final
+  if (!estaAlFinal()) return;
+  e.preventDefault();
+  focusEditorAtEnd();
 });
 
 document.addEventListener("pointermove", (e) => {
-  if (e.pointerType !== "touch") return;
+  if (e.pointerType !== "touch" || !touchPendingFocus) return;
   const dx = Math.abs(e.clientX - touchStartX);
   const dy = Math.abs(e.clientY - touchStartY);
-  if (dx > 8 || dy > 8) touchMoved = true;
+  if (dx > 10 || dy > 10) {
+    touchMoved = true;
+    touchPendingFocus = false;
+  }
 });
 
 document.addEventListener("pointerup", (e) => {
-  if (e.pointerType !== "touch") return;
-  if (touchMoved) {
-    // Fue scroll: resetear estado de doble tap
-    lastTapTime = 0;
-    lastTapTarget = null;
-    return;
+  if (e.pointerType !== "touch" || !touchPendingFocus) return;
+  if (!touchMoved) {
+    e.preventDefault();
+    setTimeout(() => {
+      focusEditorAtEnd();
+    }, 60);
   }
-
-  const target = e.target;
-  if (target.closest("#btn-canvas") || target.closest("a")) return;
-  if (target === editor || target.closest("#editor")) return;
-  if (target.closest("#committed")) return;
-
-  // Si el usuario está al final de la página: tap simple alcanza
-  if (estaAlFinal()) {
-    lastTapTime = 0;
-    lastTapTarget = null;
-    setTimeout(() => focusEditorAtEnd(), 50);
-    return;
-  }
-
-  // Scrolleó para arriba: requiere doble tap para no interrumpir la lectura
-  const now = Date.now();
-  const sinceLastTap = now - lastTapTime;
-  if (sinceLastTap < DOUBLE_TAP_MS && lastTapTarget) {
-    // Doble tap → bajar al editor
-    lastTapTime = 0;
-    lastTapTarget = null;
-    setTimeout(() => focusEditorAtEnd(), 50);
-  } else {
-    // Primer tap → registrar y esperar
-    lastTapTime = now;
-    lastTapTarget = target;
-  }
+  touchPendingFocus = false;
 });
 
 function getEditorText() {
-  // Estrategia: clonar el editor, normalizar todos los DIV/P a saltos de línea,
-  // luego leer el texto plano. Esto cubre todos los casos que genera el browser:
-  // - DIV vacíos al final (caret holder de Chrome/Safari)
-  // - P generados por algunos browsers
-  // - BR sueltos
-  // - Texto directo
-  const clone = editor.cloneNode(true);
-
-  // Convertir cada DIV y P en un salto de línea + su contenido
-  // Hacerlo de adentro hacia afuera (hijos primero)
-  const blocks = clone.querySelectorAll("div, p");
-  blocks.forEach((block) => {
-    const br = document.createTextNode("\n");
-    block.parentNode.insertBefore(br, block);
-    while (block.firstChild) {
-      block.parentNode.insertBefore(block.firstChild, block);
-    }
-    block.remove();
-  });
-
-  // Convertir BR en saltos de línea de texto
-  clone.querySelectorAll("br").forEach((br) => {
-    br.parentNode.replaceChild(document.createTextNode("\n"), br);
-  });
-
-  let text = clone.textContent || "";
-  // Limpiar caracteres especiales que el browser inserta
-  text = text.replace(/\u00A0/g, " ").replace(/\u200B/g, "");
-  // El browser siempre agrega un \n final como caret holder — quitarlo
-  text = text.replace(/\n$/, "");
-  return text;
+  // Recorrer el DOM del editor para extraer texto preservando saltos de línea
+  // correctamente, sin depender de innerText que puede romper con divs generados
+  // por el browser al presionar Enter después de un link.
+  // isRoot indica que estamos en el nodo raíz del editor, donde el browser
+  // siempre agrega un BR o DIV vacío final como "caret holder" (no es texto real).
+  function extractText(node, isRoot) {
+    let text = "";
+    const children = Array.from(node.childNodes);
+    children.forEach((child, i) => {
+      const isLast = i === children.length - 1;
+      if (child.nodeType === Node.TEXT_NODE) {
+        text += child.nodeValue;
+      } else if (child.nodeName === "BR") {
+        // Ignorar el BR final del nodo raíz: es el caret holder del browser.
+        if (isRoot && isLast) return;
+        text += "\n";
+      } else if (child.nodeName === "DIV" || child.nodeName === "P") {
+        const inner = extractText(child, false);
+        // Ignorar DIV/P vacío al final del raíz (solo tenía el BR de caret holder).
+        if (isRoot && isLast && inner === "") return;
+        text += "\n" + inner;
+      } else {
+        text += extractText(child, false);
+      }
+    });
+    return text;
+  }
+  return extractText(editor, true)
+    .replace(/\u00A0/g, " ")
+    .replace(/\u200B/g, "");
 }
 
 function setEditorText(text) {
-  // Limpiar el editor y reconstruir con nodos de texto + BR
-  // En vez de usar innerText (que puede generar estructura inesperada al re-setear)
-  editor.innerHTML = "";
-  if (!text) return;
-  const lines = text.split("\n");
-  lines.forEach((line, i) => {
-    if (line) editor.appendChild(document.createTextNode(line));
-    if (i < lines.length - 1) editor.appendChild(document.createElement("br"));
-  });
+  editor.innerText = text;
 }
 
-// Forzar que el browser use BR en vez de DIV/P al presionar Enter
-try {
-  document.execCommand("defaultParagraphSeparator", false, "br");
-} catch (e) {}
-
 function focusEditorAtEnd() {
-  editor.focus({ preventScroll: true });
+  editor.focus();
   const sel = window.getSelection();
   if (!sel) return;
-  // Si el editor está vacío, asegurarse de que tiene al menos un nodo de texto
-  if (!editor.firstChild) {
-    editor.appendChild(document.createTextNode(""));
-  }
   const range = document.createRange();
   range.selectNodeContents(editor);
-  range.collapse(false); // colapsar al final
+  range.collapse(false);
   sel.removeAllRanges();
   sel.addRange(range);
   requestAnimationFrame(() => {
-    scrollToCaret();
+    if (editor.scrollIntoView) {
+      editor.scrollIntoView({
+        block: "center",
+        inline: "nearest",
+        behavior: "smooth",
+      });
+    }
   });
 }
 
@@ -191,18 +161,13 @@ function scrollToCaret() {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return;
     const rect = sel.getRangeAt(0).getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) return; // rango colapsado sin posición real
     const vvh = window.visualViewport
       ? window.visualViewport.height
       : window.innerHeight;
-    const marginBottom = 120;
-    const marginTop = 60;
-    if (rect.bottom > vvh - marginBottom) {
-      const extra = rect.bottom - (vvh - marginBottom);
-      window.scrollBy({ top: extra, behavior: "smooth" });
-    } else if (rect.top < marginTop) {
-      const extra = rect.top - marginTop;
-      window.scrollBy({ top: extra, behavior: "smooth" });
+    const margin = 100;
+    if (rect.bottom > vvh - margin) {
+      const extra = rect.bottom - (vvh - margin);
+      window.scrollTo({ top: window.scrollY + extra, behavior: "smooth" });
     }
   });
 }
@@ -219,231 +184,11 @@ function setStatus(msg, color) {
 const renderedMessageIds = new Set();
 
 function agregarSpan(color, mensaje, id) {
-function openEmbed(embedInfo, url) {
-  const isMobile = "ontouchstart" in window || window.innerWidth < 768;
-
-  if (activePlayer) activePlayer.remove();
-
-  const panel = document.createElement("div");
-  panel.id = "embed-player";
-  if (isMobile) panel.classList.add("embed-mobile");
-
-  const toolbar = document.createElement("div");
-  toolbar.id = "embed-toolbar";
-
-  const titleEl = document.createElement("span");
-  titleEl.id = "embed-title";
-  try {
-    titleEl.textContent = new URL(url).hostname.replace("www.", "");
-  } catch (e) {}
-
-  const btnExt = document.createElement("a");
-  btnExt.href = url;
-  btnExt.target = "_blank";
-  btnExt.rel = "noopener noreferrer";
-  btnExt.id = "embed-ext";
-  btnExt.textContent = "↗";
-  btnExt.title = "Abrir en nueva pestaña";
-
-  const btnClose = document.createElement("button");
-  btnClose.id = "embed-close";
-  btnClose.textContent = "✕";
-  btnClose.onclick = () => {
-    panel.remove();
-    activePlayer = null;
-  };
-
-  toolbar.appendChild(titleEl);
-  toolbar.appendChild(btnExt);
-  toolbar.appendChild(btnClose);
-  panel.appendChild(toolbar);
-
-  if (isMobile) {
-    const handle = document.createElement("div");
-    handle.id = "embed-handle";
-    panel.appendChild(handle);
-  }
-
-  const content = document.createElement("div");
-  content.id = "embed-content";
-
-  if (embedInfo.type === "twitter") {
-    const tweetContainer = document.createElement("div");
-    tweetContainer.style.cssText = "overflow:auto;height:100%;padding:8px;";
-    const blockquote = document.createElement("blockquote");
-    blockquote.className = "twitter-tweet";
-    const a = document.createElement("a");
-    a.href = embedInfo.url;
-    blockquote.appendChild(a);
-    tweetContainer.appendChild(blockquote);
-    content.appendChild(tweetContainer);
-    if (!document.getElementById("twitter-widgets-js")) {
-      const script = document.createElement("script");
-      script.id = "twitter-widgets-js";
-      script.src = "https://platform.twitter.com/widgets.js";
-      script.async = true;
-      document.body.appendChild(script);
-    } else if (window.twttr) {
-      window.twttr.widgets.load(tweetContainer);
-    }
-  } else {
-    const iframe = document.createElement("iframe");
-    iframe.src = embedInfo.src;
-    iframe.width = "100%";
-    iframe.height = "100%";
-    iframe.frameBorder = "0";
-    iframe.allow =
-      "autoplay; encrypted-media; fullscreen; clipboard-write; picture-in-picture";
-    iframe.allowFullscreen = true;
-    content.appendChild(iframe);
-  }
-
-  panel.appendChild(content);
-  document.body.appendChild(panel);
-  activePlayer = panel;
-
-  const vw = window.innerWidth;
-  const vh = window.visualViewport
-    ? window.visualViewport.height
-    : window.innerHeight;
-  const toolbarH = 40;
-  const handleH = isMobile ? 12 : 0;
-  const maxPanelWidth = isMobile
-    ? Math.min(vw - 32, 420)
-    : Math.min(embedInfo.w, 560, vw - 24);
-  let contentH = Math.round((embedInfo.h * maxPanelWidth) / embedInfo.w);
-  if (isMobile) {
-    contentH = Math.min(contentH, Math.round(vh * 0.48), 340);
-  }
-  const panelHeight = toolbarH + handleH + contentH;
-
-  panel.style.width = maxPanelWidth + "px";
-  panel.style.height = panelHeight + "px";
-  panel.style.top = "12px";
-  panel.style.left = "50%";
-  panel.style.transform = "translateX(-50%)";
-  panel.style.bottom = "auto";
-
-  if (isMobile) {
-    panel.style.right = "auto";
-  }
-
-  if (isMobile) {
-    let startY = 0;
-    let startTop = 0;
-    panel.addEventListener(
-      "touchstart",
-      (e) => {
-        if (
-          !e.target.closest("#embed-handle") &&
-          !e.target.closest("#embed-toolbar")
-        )
-          return;
-        startY = e.touches[0].clientY;
-        startTop = panel.getBoundingClientRect().top;
-        panel.style.transition = "none";
-      },
-      { passive: true },
-    );
-    panel.addEventListener(
-      "touchmove",
-      (e) => {
-        if (
-          !e.target.closest("#embed-handle") &&
-          !e.target.closest("#embed-toolbar")
-        )
-          return;
-        const dy = e.touches[0].clientY - startY;
-        if (dy > 0) {
-          panel.style.bottom = "auto";
-          panel.style.top = startTop + dy + "px";
-        }
-      },
-      { passive: true },
-    );
-    panel.addEventListener(
-      "touchend",
-      (e) => {
-        const dy = e.changedTouches[0].clientY - startY;
-        if (dy > 80) {
-          panel.remove();
-          activePlayer = null;
-        } else {
-          panel.style.transition = "top 0.2s ease";
-          panel.style.top = "auto";
-          panel.style.bottom = "12px";
-        }
-      },
-      { passive: true },
-    );
-  } else {
-    let dragOffX = 0,
-      dragOffY = 0,
-      dragging = false;
-    toolbar.addEventListener("mousedown", (e) => {
-      dragging = true;
-      dragOffX = e.clientX - panel.getBoundingClientRect().left;
-      dragOffY = e.clientY - panel.getBoundingClientRect().top;
-      panel.style.transition = "none";
-      e.preventDefault();
-    });
-    document.addEventListener("mousemove", (e) => {
-      if (!dragging) return;
-      panel.style.left = e.clientX - dragOffX + "px";
-      panel.style.top = e.clientY - dragOffY + "px";
-    });
-    document.addEventListener("mouseup", () => {
-      dragging = false;
-    });
-  }
-}
-
-function renderConLinks(container, texto) {
-  const partes = texto.split(URL_REGEX);
-  partes.forEach((parte) => {
-    URL_REGEX.lastIndex = 0;
-    if (URL_REGEX.test(parte)) {
-      const embedInfo = getEmbedInfo(parte);
-      const a = document.createElement("a");
-      a.href = parte;
-      a.textContent = parte;
-      a.rel = "noopener noreferrer";
-      if (embedInfo) {
-        a.onclick = (e) => {
-          e.preventDefault();
-          openEmbed(embedInfo, parte);
-        };
-      } else {
-        a.target = "_blank";
-      }
-      container.appendChild(a);
-    } else {
-      // Dividir por saltos de línea para preservarlos como <br>
-      const lineas = parte.split("\n");
-      lineas.forEach((linea, idx) => {
-        if (linea) {
-          container.appendChild(document.createTextNode(linea));
-        }
-        // <br> después de cada \n — incluso el último si el mensaje termina en \n
-        // (eso hace que el editor continúe en la línea correcta)
-        if (idx < lineas.length - 1) {
-          container.appendChild(document.createElement("br"));
-        } else if (idx === lineas.length - 1 && linea === "") {
-          // El mensaje termina en \n: agregar <br> final para que el editor
-          // empiece en la línea siguiente
-          container.appendChild(document.createElement("br"));
-        }
-      });
-    }
-  });
-}
-
-function agregarSpan(color, mensaje, id, tipo) {
   if (id && renderedMessageIds.has(id)) return;
   if (id) renderedMessageIds.add(id);
 
   mensaje = mensaje.replace(/\u00A0/g, " ").replace(/\u200B/g, "");
-  // No stripear \n finales: el usuario puede querer líneas en blanco al final del mensaje
+  mensaje = mensaje.replace(/\n+$/, "");
   if (mensaje.trim() === "") return;
   const span = document.createElement("span");
   span.className = "msg";
@@ -585,7 +330,8 @@ async function confirmar() {
   }
 
   // Editor visible con texto → guardar
-  // getEditorText ya elimina el \n del caret holder del browser
+  // Trim trailing newlines (browser caret holder artifact)
+  mensaje = mensaje.replace(/\n+$/, "");
   if (!mensaje.trim()) return;
 
   // Verificar si es un comando
@@ -601,9 +347,9 @@ async function confirmar() {
 
   guardando = true; // set synchronously before any await to block re-entry
   setEditorText("");
-  editor.innerHTML = ""; // doble limpieza para asegurar que no queden nodos residuales
+  editor.style.color = TEXTO_COLOR;
   updateHeight();
-  requestAnimationFrame(() => focusEditorAtEnd());
+  focusEditorAtEnd();
   guardar(mensaje).finally(() => {
     guardando = false;
   });
@@ -661,47 +407,6 @@ editor.addEventListener("keydown", (e) => {
     e.preventDefault();
     insertTextAtCursor(TAB);
   }
-  // Interceptar Enter para garantizar que el browser inserte <br> y nunca <div>/<p>
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    // Insertar BR manualmente en la posición del cursor
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0) {
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-      const br = document.createElement("br");
-      range.insertNode(br);
-
-      // Para que el cursor quede visualmente en la nueva línea, el browser
-      // necesita un nodo de texto con contenido real *o* un segundo BR cuando
-      // el BR insertado es el último nodo del editor. Un TextNode("") no ocupa
-      // espacio y el caret no tiene dónde anclarse, por eso el primer Enter
-      // parecía no funcionar.
-      //
-      // Solución: posicionar el cursor usando el índice de offset dentro del
-      // nodo padre en lugar de setStartAfter(br), y agregar un BR fantasma
-      // solo si el br es el último hijo (así el browser siempre tiene "algo"
-      // después del caret).
-      const parent = br.parentNode;
-      const brIndex = Array.prototype.indexOf.call(parent.childNodes, br);
-
-      if (!br.nextSibling) {
-        // BR al final del editor: agregar un BR centinela para que el caret
-        // tenga una posición real en la línea siguiente.
-        const sentinel = document.createElement("br");
-        parent.appendChild(sentinel);
-      }
-
-      // Posicionar el cursor justo después del BR recién insertado
-      const newRange = document.createRange();
-      newRange.setStart(parent, brIndex + 1);
-      newRange.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(newRange);
-    }
-    updateHeight();
-    scrollToCaret();
-  }
   if (e.key === "Enter" && e.shiftKey && !("ontouchstart" in window)) {
     e.preventDefault();
     animarYConfirmar();
@@ -743,10 +448,9 @@ async function cargar() {
     );
     if (res.ok) {
       const rows = await res.json();
-      // Limpiar siempre antes de renderizar la respuesta definitiva del server
-      committedEl.innerHTML = "";
-      renderedMessageIds.clear();
-      ultimoId = 0;
+      if (!localRows.length) {
+        committedEl.innerHTML = "";
+      }
       rows.forEach((r) => {
         agregarSpan(r.color || "#000", r.mensaje, r.id);
       });
@@ -757,10 +461,7 @@ async function cargar() {
           top: document.body.scrollHeight,
           behavior: "instant",
         });
-        // Esperar un frame más para que el scroll se aplique antes del focus
-        requestAnimationFrame(() => {
-          focusEditorAtEnd();
-        });
+        focusEditorAtEnd();
       });
     } else {
       const txt = await res.text();
@@ -775,16 +476,10 @@ async function cargar() {
         agregarSpan(r.color || "#000", r.mensaje, r.id);
       });
       setStatus("Offline. Mostrando caché local.", "#e53935");
-      requestAnimationFrame(() => {
-        window.scrollTo({
-          top: document.body.scrollHeight,
-          behavior: "instant",
-        });
-        requestAnimationFrame(() => focusEditorAtEnd());
-      });
     } else {
       setStatus("✗ sin conexión. No hay datos locales.", "#e53935");
     }
+    editor.focus();
     updateHeight();
   }
 }
@@ -825,5 +520,5 @@ if (window.visualViewport) {
   });
 }
 cargar().then(() => {
-  setInterval(polling, 5000);
+  iniciarRealtime();
 });
