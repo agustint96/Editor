@@ -553,9 +553,9 @@ async function guardar(mensaje, tipo) {
         const g = ctx.createGain();
         o.connect(g);
         g.connect(ctx.destination);
-        o.type = "sine";
-        o.frequency.setValueAtTime(880, ctx.currentTime);
-        o.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.12);
+        o.type = "saw";
+        o.frequency.setValueAtTime(1320, ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12);
         g.gain.setValueAtTime(0.18, ctx.currentTime);
         g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
         o.start(ctx.currentTime);
@@ -655,6 +655,7 @@ const CANVAS_IMAGES = [
   "img/vibra.JPG",
   "img/wachin.jpg",
   "img/zorritos.jpg",
+  "img/francellayfatiga.png",
 ];
 
 const btnCanvas = document.getElementById("btn-canvas");
