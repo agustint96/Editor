@@ -562,6 +562,7 @@ const CANVAS_IMAGES = [
   "img/compu.jpg",
   "img/Qualquer_Coisa.jpg",
   "img/YMOCOVER.jpeg",
+  "img/osito.png",
 ];
 
 const btnCanvas = document.getElementById("btn-canvas");
