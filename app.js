@@ -458,11 +458,6 @@ function agregarSpan(color, mensaje, id, tipo) {
   if (id && renderedMessageIds.has(id)) return;
   if (id) renderedMessageIds.add(id);
 
-  if (tipo === "munari") {
-    mostrarBrunoMunariAnclado(id);
-    return;
-  }
-
   mensaje = mensaje.replace(/\u00A0/g, " ").replace(/\u200B/g, "");
   mensaje = mensaje.replace(/\n+$/, "");
   if (mensaje.trim() === "") return;
@@ -570,58 +565,56 @@ function insertTextAtCursor(text) {
 // ========================
 
 const CANVAS_IMAGES = [
-
- "img/008000.PNG",
-"img/Qualquer_Coisa.jpg",
-"img/YMOCOVER.jpeg",
-"img/allplastic.PNG",
-"img/baldio.png",
-"img/bart.PNG",
-"img/bart2.PNG",
-"img/boca.jpg",
-"img/cafe.jpg",
-"img/capusotto.PNG",
-"img/chispas.png",
-"img/chispi.PNG",
-"img/chocolino.png",
-"img/compu.jpg",
-"img/cosa.PNG",
-"img/delavega.png",
-"img/dragon.PNG",
-"img/duendes.jpg",
-"img/enano.PNG",
-"img/enano2.PNG",
-"img/existenz.jpg",
-"img/felipe.jpg",
-"img/flor.jpg",
-"img/flores.jpg",
-"img/gato.PNG",
-"img/gatoabeja.JPG",
-"img/gatoblanco.png",
-"img/gatopc.jpg",
-"img/girasol.png",
-"img/godzilla.jpg",
-"img/guaso.jpg",
-"img/icon.jpg",
-"img/jirafa.png",
-"img/kufi.png",
-"img/leon.PNG",
-"img/maiz.png",
-"img/minion.JPG",
-"img/okapi.jpg",
-"img/osito.png",
-"img/pantera.jpg",
-"img/pikacho.png",
-"img/rinoceronte.PNG",
-"img/santaolalla.png",
-"img/sapos.png",
-"img/sms_of_death.jpg",
-"img/vaca.PNG",
-"img/ventana.png",
-"img/vibra.JPG",
-"img/wachin.jpg",
-"img/zorritos.jpg",
-
+  "img/008000.PNG",
+  "img/Qualquer_Coisa.jpg",
+  "img/YMOCOVER.jpeg",
+  "img/allplastic.PNG",
+  "img/baldio.png",
+  "img/bart.PNG",
+  "img/bart2.PNG",
+  "img/boca.jpg",
+  "img/cafe.jpg",
+  "img/capusotto.PNG",
+  "img/chispas.png",
+  "img/chispi.PNG",
+  "img/chocolino.png",
+  "img/compu.jpg",
+  "img/cosa.PNG",
+  "img/delavega.png",
+  "img/dragon.PNG",
+  "img/duendes.jpg",
+  "img/enano.PNG",
+  "img/enano2.PNG",
+  "img/existenz.jpg",
+  "img/felipe.jpg",
+  "img/flor.jpg",
+  "img/flores.jpg",
+  "img/gato.PNG",
+  "img/gatoabeja.JPG",
+  "img/gatoblanco.png",
+  "img/gatopc.jpg",
+  "img/girasol.png",
+  "img/godzilla.jpg",
+  "img/guaso.jpg",
+  "img/icon.jpg",
+  "img/jirafa.png",
+  "img/kufi.png",
+  "img/leon.PNG",
+  "img/maiz.png",
+  "img/minion.JPG",
+  "img/okapi.jpg",
+  "img/osito.png",
+  "img/pantera.jpg",
+  "img/pikacho.png",
+  "img/rinoceronte.PNG",
+  "img/santaolalla.png",
+  "img/sapos.png",
+  "img/sms_of_death.jpg",
+  "img/vaca.PNG",
+  "img/ventana.png",
+  "img/vibra.JPG",
+  "img/wachin.jpg",
+  "img/zorritos.jpg",
 ];
 
 const btnCanvas = document.getElementById("btn-canvas");
@@ -672,6 +665,15 @@ function pickRandomImageIndex(exclude) {
 }
 
 async function setCanvasImage(forceNew) {
+  // Cancelar animación Munari si estaba activa
+  if (btnCanvas._munariAnimId) {
+    cancelAnimationFrame(btnCanvas._munariAnimId);
+    btnCanvas._munariAnimId = null;
+  }
+  if (btnCanvas._munariCleanup) {
+    btnCanvas._munariCleanup();
+    btnCanvas._munariCleanup = null;
+  }
   const newIdx = forceNew
     ? pickRandomImageIndex(currentCanvasImageIndex)
     : pickRandomImageIndex(_savedIdx);
@@ -691,163 +693,54 @@ setCanvasImage(false).then(() => {
 // BRUNO MUNARI
 // ========================
 
-// Tamaño responsivo del canvas Munari según breakpoints
-function munariSize() {
-  const w = window.innerWidth;
-  if (w >= 1920) return 130;
-  if (w >= 1440) return 140;
-  if (w >= 1024) return 150;
-  if (w >= 768) return 160;
-  return 120;
-}
-
 function mostrarBrunoMunari() {
-  // Si ya hay uno, lo quitamos
-  const existing = document.getElementById("munari-panel");
-  if (existing) existing.remove();
-
-  const panel = document.createElement("div");
-  panel.id = "munari-panel";
-
-  const S = munariSize();
-  const cv = document.createElement("canvas");
-  cv.width = S;
-  cv.height = S;
-  panel.appendChild(cv);
-  document.body.appendChild(panel);
-
-  const ctx2d = cv.getContext("2d");
+  // Dibuja el Munari directamente en el btnCanvas del botón
+  const S = btnCanvas.width;
+  const ctx2d = ctx; // reusar el contexto del botón
   const sc = S / 500;
+
+  // Cancelar animación Munari previa si existe
+  if (btnCanvas._munariAnimId) {
+    cancelAnimationFrame(btnCanvas._munariAnimId);
+    btnCanvas._munariAnimId = null;
+  }
+  if (btnCanvas._munariCleanup) {
+    btnCanvas._munariCleanup();
+    btnCanvas._munariCleanup = null;
+  }
+
+  const isMobileDevice = "ontouchstart" in window || window.innerWidth < 768;
   let mouseRelY = S / 2;
   let mouseAbsX = window.innerWidth / 2;
-  let animId;
 
-  function onMouseMove(e) {
-    const rect = cv.getBoundingClientRect();
-    mouseRelY = e.clientY - rect.top;
-    mouseAbsX = e.clientX;
-  }
-  document.addEventListener("mousemove", onMouseMove);
-
-  function draw() {
-    ctx2d.clearRect(0, 0, S, S);
-    ctx2d.fillStyle = "#dcdcdc";
-    ctx2d.fillRect(0, 0, S, S);
-    ctx2d.strokeStyle = "#000";
-    ctx2d.lineWidth = 5 * sc;
-    ctx2d.lineCap = "round";
-
-    function line(x1, y1, x2, y2) {
-      ctx2d.beginPath();
-      ctx2d.moveTo(x1 * sc, y1 * sc);
-      ctx2d.lineTo(x2 * sc, y2 * sc);
-      ctx2d.stroke();
+  if (!isMobileDevice) {
+    function onMouseMove(e) {
+      const rect = btnCanvas.getBoundingClientRect();
+      const relY = e.clientY - rect.top;
+      mouseRelY = Math.max(0, Math.min(S, relY));
+      mouseAbsX = e.clientX;
     }
-
-    [50, 150, 250, 350, 450].forEach((x) => line(x, 50, x, 450));
-    [50, 150, 250, 350, 450].forEach((y) => line(50, y, 450, y));
-    line(50, 150, 150, 50);
-    line(150, 50, 250, 150);
-    line(250, 150, 350, 50);
-    line(350, 50, 450, 150);
-    line(150, 250, 250, 350);
-    line(250, 350, 350, 250);
-    line(150, 400, 350, 400);
-
-    // El mouse Y controla la posición vertical (mapeado a y=70..250 en espacio 500)
-    const mouseY500 = 70 + (mouseRelY / S) * (250 - 70);
-    const clampedY = Math.max(70, Math.min(250, mouseY500));
-
-    // El mouse X determina dirección horizontal (relativo al centro de pantalla)
-    const rect = cv.getBoundingClientRect();
-    const panelCenterX = rect.left + rect.width / 2;
-    const rawX = (mouseAbsX - panelCenterX) / (rect.width * 4);
-    const clampedX = Math.max(-1, Math.min(1, rawX));
-    const DEAD_ZONE = 0.15;
-
-    // Posición de cada ojo: SIEMPRE sobre una línea de la grilla.
-    // Fase A (y < 150): baja recto por su columna.
-    // Fase B (y >= 150):
-    //   - mouse centrado (|x| < DEAD_ZONE): sigue bajando por la columna hasta y=250
-    //   - mouse a los lados: se queda FIJO en y=150 y se mueve en X sobre esa línea
-    function eyePos(colX) {
-      if (clampedY < 150) {
-        // Fase A: carril vertical
-        return { x: colX * sc, y: clampedY * sc };
-      }
-      // Fase B
-      if (Math.abs(clampedX) < DEAD_ZONE) {
-        // Sigue recto por la columna
-        return { x: colX * sc, y: clampedY * sc };
-      }
-      // Dobla en y=150 y rueda horizontalmente
-      const tX = Math.min(
-        1,
-        (Math.abs(clampedX) - DEAD_ZONE) / (1 - DEAD_ZONE),
+    document.addEventListener("mousemove", onMouseMove);
+    btnCanvas._munariCleanup = () =>
+      document.removeEventListener("mousemove", onMouseMove);
+  } else {
+    let initialScrollY = window.scrollY;
+    const maxScrollRange = 300;
+    function updateFromScroll() {
+      const delta = window.scrollY - initialScrollY;
+      const clamped = Math.max(
+        -maxScrollRange,
+        Math.min(maxScrollRange, delta),
       );
-      const goingLeft = clampedX < 0;
-      const xMin = colX === 150 ? 70 : 260;
-      const xMax = colX === 150 ? 240 : 430;
-      const xTarget = goingLeft ? xMin : xMax;
-      const ex = colX + tX * (xTarget - colX);
-      return { x: ex * sc, y: 150 * sc }; // y fijo en 150, siempre sobre la línea
+      mouseRelY = ((clamped + maxScrollRange) / (2 * maxScrollRange)) * S;
+      mouseAbsX = window.innerWidth / 2;
     }
-
-    const leftEye = eyePos(150);
-    const rightEye = eyePos(350);
-
-    ctx2d.fillStyle = "#000";
-    ctx2d.beginPath();
-    ctx2d.arc(leftEye.x, leftEye.y, 15 * sc, 0, Math.PI * 2);
-    ctx2d.fill();
-    ctx2d.beginPath();
-    ctx2d.arc(rightEye.x, rightEye.y, 15 * sc, 0, Math.PI * 2);
-    ctx2d.fill();
-
-    animId = requestAnimationFrame(draw);
+    window.addEventListener("scroll", updateFromScroll);
+    btnCanvas._munariCleanup = () =>
+      window.removeEventListener("scroll", updateFromScroll);
   }
 
-  draw();
-
-  setTimeout(() => {
-    panel.remove();
-    cancelAnimationFrame(animId);
-    document.removeEventListener("mousemove", onMouseMove);
-  }, 10000);
-}
-
-function mostrarBrunoMunariAnclado(anchorId) {
-  const existing = document.getElementById("munari-panel-anclado");
-  if (existing) {
-    existing._cleanup && existing._cleanup();
-    existing.remove();
-  }
-
-  const panel = document.createElement("div");
-  panel.id = "munari-panel-anclado";
-  if (anchorId) panel.dataset.id = anchorId;
-
-  const S = munariSize();
-  const cv = document.createElement("canvas");
-  cv.width = S;
-  cv.height = S;
-  panel.appendChild(cv);
-
-  committedEl.appendChild(panel);
-
-  const ctx2d = cv.getContext("2d");
-  const sc = S / 500;
-  let mouseRelY = S / 2;
-  let mouseAbsX = window.innerWidth / 2;
-  let animId;
-
-  function onMouseMove(e) {
-    mouseRelY = e.clientY - cv.getBoundingClientRect().top;
-    mouseAbsX = e.clientX;
-  }
-  document.addEventListener("mousemove", onMouseMove);
-
-  function draw() {
+  function drawMunari() {
     ctx2d.clearRect(0, 0, S, S);
     ctx2d.fillStyle = "#dcdcdc";
     ctx2d.fillRect(0, 0, S, S);
@@ -872,10 +765,10 @@ function mostrarBrunoMunariAnclado(anchorId) {
     line(250, 350, 350, 250);
     line(150, 400, 350, 400);
 
-    const mouseY500 = 70 + (mouseRelY / S) * (250 - 70);
-    const clampedY = Math.max(70, Math.min(250, mouseY500));
+    const t = mouseRelY / S;
+    const clampedY = 70 + t * (250 - 70);
 
-    const rect = cv.getBoundingClientRect();
+    const rect = btnCanvas.getBoundingClientRect();
     const panelCenterX = rect.left + rect.width / 2;
     const rawX = (mouseAbsX - panelCenterX) / (rect.width * 4);
     const clampedX = Math.max(-1, Math.min(1, rawX));
@@ -898,6 +791,7 @@ function mostrarBrunoMunariAnclado(anchorId) {
 
     const leftEye = eyePos(150);
     const rightEye = eyePos(350);
+
     ctx2d.fillStyle = "#000";
     ctx2d.beginPath();
     ctx2d.arc(leftEye.x, leftEye.y, 15 * sc, 0, Math.PI * 2);
@@ -906,15 +800,12 @@ function mostrarBrunoMunariAnclado(anchorId) {
     ctx2d.arc(rightEye.x, rightEye.y, 15 * sc, 0, Math.PI * 2);
     ctx2d.fill();
 
-    animId = requestAnimationFrame(draw);
+    btnCanvas._munariAnimId = requestAnimationFrame(drawMunari);
   }
 
-  draw();
-
-  panel._cleanup = () => {
-    cancelAnimationFrame(animId);
-    document.removeEventListener("mousemove", onMouseMove);
-  };
+  drawMunari();
+  // La animación queda activa hasta que el usuario toque el botón.
+  // setCanvasImage() la cancela automáticamente cuando eso ocurre.
 }
 
 const COMANDOS = {
@@ -922,7 +813,6 @@ const COMANDOS = {
     "Creado por <a href='https://agustint96.github.io' target='_blank'>Agustín Tardella</a> y <a href='https://interjuegos.neocities.org/' target='_blank'>Naim Goldraij</a>",
   "/girar": null,
   "/brunomunari": null,
-  "/brunomunariporsiempre": null,
 };
 
 function girarTexto() {
@@ -1128,22 +1018,6 @@ async function confirmar() {
 
   // Verificar si es un comando
   const mensajeLimpio = mensaje.trim().toLowerCase();
-
-  // Caso especial: /brunomunariporsiempre — guarda el mensaje sin el comando
-  if (mensajeLimpio.startsWith("/brunomunariporsiempre")) {
-    const mensajeSinComando = mensaje
-      .trim()
-      .slice("/brunomunariporsiempre".length)
-      .trim();
-    setEditorText("");
-    updateHeight();
-    focusEditorAtEnd();
-    guardando = true;
-    guardar(mensajeSinComando || " ", "munari").finally(() => {
-      guardando = false;
-    });
-    return;
-  }
 
   if (mensajeLimpio in COMANDOS) {
     setEditorText("");
