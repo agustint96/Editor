@@ -557,11 +557,9 @@ const CANVAS_IMAGES = [
   "img/chispas.png",
   "img/ventana.png",
   "img/baldio.png",
-  "img/grito.jpg",
   "img/jirafa.png",
   "img/gatoblanco.png",
   "img/compu.jpg",
-  "img/tuca1.jpg",
   "img/Qualquer_Coisa.jpg",
   "img/YMOCOVER.jpeg",
 ];
