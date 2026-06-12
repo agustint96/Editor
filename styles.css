@@ -8,6 +8,8 @@ body {
   background: #fff;
   font-family: system-ui, sans-serif;
   min-height: 100dvh;
+  /* Escala fluida: 13px en 320px, 16px en 768px+ */
+  font-size: clamp(13px, 2.8vw, 16px);
 }
 
 #page {
@@ -24,7 +26,7 @@ body {
   display: inline;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 15px;
+  font-size: 1em;
   line-height: 1.7;
   user-select: text;
   -webkit-user-select: text;
@@ -56,7 +58,7 @@ body {
   display: inline;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 15px;
+  font-size: 1em;
   line-height: 1.7;
   color: rgba(0, 0, 0, 0.65);
   outline: none;
@@ -79,7 +81,7 @@ body {
   position: fixed;
   bottom: 1rem;
   left: 1.4rem;
-  font-size: 12px;
+  font-size: 0.8em;
   color: #aaa;
   pointer-events: none;
 }
@@ -125,13 +127,13 @@ body {
 
 #committed,
 #editor {
-  font-size: 15px;
+  font-size: 1em;
   line-height: 1.7;
 }
 
 #status {
   left: 1rem;
-  font-size: 11px;
+  font-size: 0.73em;
 }
 
 @media (max-width: 767px) {
@@ -162,7 +164,7 @@ body {
 
   #committed,
   #editor {
-    font-size: 16px;
+    font-size: 1.06em;
     line-height: 1.75;
   }
 
@@ -175,7 +177,7 @@ body {
 
   #status {
     left: calc(50% - 360px);
-    font-size: 12px;
+    font-size: 0.8em;
   }
 }
 
@@ -193,7 +195,7 @@ body {
 
   #committed,
   #editor {
-    font-size: 16px;
+    font-size: 1.06em;
     line-height: 1.8;
   }
 
@@ -223,7 +225,7 @@ body {
 
   #committed,
   #editor {
-    font-size: 17px;
+    font-size: 1.13em;
     line-height: 1.85;
   }
 
@@ -237,7 +239,7 @@ body {
 
   #status {
     left: calc(50% - 640px);
-    font-size: 13px;
+    font-size: 0.87em;
   }
 }
 
@@ -255,7 +257,7 @@ body {
 
   #committed,
   #editor {
-    font-size: 18px;
+    font-size: 1.2em;
     line-height: 1.9;
   }
 
@@ -269,7 +271,7 @@ body {
 
   #status {
     left: calc(50% - 800px);
-    font-size: 13px;
+    font-size: 0.87em;
     bottom: 1.4rem;
   }
 }
@@ -329,7 +331,7 @@ body {
 
 #embed-title {
   flex: 1;
-  font-size: 12px;
+  font-size: 0.8em;
   color: #888;
   font-family: system-ui, sans-serif;
   overflow: hidden;
@@ -338,7 +340,7 @@ body {
 }
 
 #embed-ext {
-  font-size: 14px;
+  font-size: 0.93em;
   color: #aaa;
   text-decoration: none;
   line-height: 1;
@@ -354,7 +356,7 @@ body {
 #embed-close {
   background: none;
   border: none;
-  font-size: 13px;
+  font-size: 0.87em;
   color: #aaa;
   cursor: pointer;
   padding: 4px;
@@ -439,7 +441,7 @@ body {
   padding: 8px 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   font-family: system-ui, sans-serif;
-  font-size: 12px;
+  font-size: 0.8em;
   color: #555;
   line-height: 1.5;
   max-width: 240px;
@@ -461,6 +463,18 @@ body {
   display: block;
 }
 
+#btn-hint a,
+#btn-hint a:visited,
+#btn-hint a:hover,
+#btn-hint a:active {
+  color: rgba(0, 0, 0, 0.65);
+  text-decoration: none;
+}
+
+#btn-hint a:hover {
+  color: #000;
+}
+
 /* Teclas */
 .hint-keys {
   display: inline-flex;
@@ -473,7 +487,7 @@ body {
 .hint-keys kbd {
   display: inline-block;
   font-family: system-ui, sans-serif;
-  font-size: 11px;
+  font-size: 0.92em;
   font-weight: 500;
   color: #444;
   background: #f3f3f3;
@@ -485,8 +499,19 @@ body {
 }
 
 .hint-plus {
-  font-size: 10px;
+  font-size: 0.83em;
   color: #888;
+}
+
+@media (max-width: 767px) {
+  #btn-hint {
+    /* botón: right 1.4rem, width 120px → hint queda a la izquierda con 12px de gap */
+    right: calc(1.4rem + 120px + 12px);
+    bottom: calc(1.4rem + 60px); /* mismo centro vertical que el botón */
+    max-width: calc(
+      100vw - 1.4rem - 120px - 12px - 1rem
+    ); /* no se sale por la izquierda */
+  }
 }
 
 @media (min-width: 768px) {
@@ -500,11 +525,11 @@ body {
   #btn-hint {
     right: calc(1.8rem + 100px + 14px);
     bottom: calc(1.8rem + 50px);
-    font-size: 13px;
+    font-size: 0.87em;
     max-width: 280px;
   }
   .hint-keys kbd {
-    font-size: 12px;
+    font-size: 0.92em;
   }
 }
 

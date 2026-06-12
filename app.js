@@ -558,7 +558,6 @@ const CANVAS_IMAGES = [
   "img/ventana.png",
   "img/baldio.png",
   "img/grito.jpg",
-  "img/chocolino.png",
   "img/jirafa.png",
   "img/gatoblanco.png",
   "img/compu.jpg",
@@ -627,6 +626,105 @@ async function setCanvasImage(forceNew) {
 setCanvasImage(false).then(() => {
   mostrarHint();
 });
+
+// ========================
+// COMANDOS
+// ========================
+
+const COMANDOS = {
+  "/creadores":
+    "Creado por <a href='https://agustint96.github.io' target='_blank'>Agustín Tardella</a> y <a href='https://interjuegos.neocities.org/' target='_blank'>Naim Goldraij</a>",
+  "/girar": null, // manejado por lógica especial
+};
+
+function girarTexto() {
+  // Inyectar keyframe si no existe
+  if (!document.getElementById("spin-keyframe")) {
+    const style = document.createElement("style");
+    style.id = "spin-keyframe";
+    style.textContent = `
+      @keyframes spinLetter {
+        0%   { display: inline-block; transform: rotate(0deg); }
+        100% { display: inline-block; transform: rotate(2880deg); }
+      }
+      .spin-letter {
+        display: inline-block;
+        animation: spinLetter 4s ease-in-out forwards;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Envolver cada caracter visible en un span animado
+  function envolverTexto(nodo) {
+    if (nodo.nodeType === Node.TEXT_NODE) {
+      const texto = nodo.nodeValue;
+      if (!texto) return;
+      const frag = document.createDocumentFragment();
+      for (const char of texto) {
+        if (char === "\n") {
+          frag.appendChild(document.createTextNode("\n"));
+        } else {
+          const span = document.createElement("span");
+          span.className = "spin-letter";
+          span.style.animationDelay = (Math.random() * 0.6).toFixed(3) + "s";
+          span.textContent = char;
+          frag.appendChild(span);
+        }
+      }
+      nodo.parentNode.replaceChild(frag, nodo);
+    } else if (
+      nodo.nodeType === Node.ELEMENT_NODE &&
+      nodo.nodeName !== "SCRIPT" &&
+      nodo.nodeName !== "STYLE"
+    ) {
+      Array.from(nodo.childNodes).forEach(envolverTexto);
+    }
+  }
+
+  envolverTexto(committedEl);
+  envolverTexto(editor);
+
+  // 4000ms duración + 600ms delay máximo + 200ms margen
+  setTimeout(
+    () => {
+      document.querySelectorAll(".spin-letter").forEach((span) => {
+        const txt = document.createTextNode(span.textContent);
+        span.parentNode.replaceChild(txt, span);
+      });
+      committedEl.normalize();
+      editor.normalize();
+    },
+    4000 + 600 + 200,
+  );
+}
+
+function mostrarHintPersonalizado(texto) {
+  const hintEl = document.getElementById("btn-hint");
+  const hintText = document.getElementById("btn-hint-text");
+
+  hintEl.style.display = "";
+  hintEl.style.pointerEvents = "auto";
+  hintEl.classList.remove("hint-visible", "hint-hiding");
+
+  setTimeout(() => {
+    hintText.innerHTML = texto;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        hintEl.classList.add("hint-visible");
+      });
+    });
+
+    setTimeout(() => {
+      hintEl.classList.add("hint-hiding");
+      hintEl.classList.remove("hint-visible");
+      setTimeout(() => {
+        hintEl.classList.remove("hint-hiding");
+        hintEl.style.pointerEvents = "";
+      }, 400);
+    }, 4000);
+  }, 50);
+}
 
 // ========================
 // HINT DE PRIMER USO
@@ -739,6 +837,21 @@ async function confirmar() {
   // Trim trailing newlines (browser caret holder artifact)
   mensaje = mensaje.replace(/\n+$/, "");
   if (!mensaje.trim()) return;
+
+  // Verificar si es un comando
+  const mensajeLimpio = mensaje.trim().toLowerCase();
+  if (mensajeLimpio in COMANDOS) {
+    setEditorText("");
+    updateHeight();
+    focusEditorAtEnd();
+    if (mensajeLimpio === "/girar") {
+      girarTexto();
+    } else if (COMANDOS[mensajeLimpio]) {
+      mostrarHintPersonalizado(COMANDOS[mensajeLimpio]);
+    }
+    return;
+  }
+
   guardando = true; // set synchronously before any await to block re-entry
   setEditorText("");
   updateHeight();
