@@ -93,7 +93,36 @@ document.addEventListener("pointerup", (e) => {
 });
 
 function getEditorText() {
-  return editor.innerText.replace(/\u00A0/g, " ").replace(/\u200B/g, "");
+  // Recorrer el DOM del editor para extraer texto preservando saltos de línea
+  // correctamente, sin depender de innerText que puede romper con divs generados
+  // por el browser al presionar Enter después de un link.
+  // isRoot indica que estamos en el nodo raíz del editor, donde el browser
+  // siempre agrega un BR o DIV vacío final como "caret holder" (no es texto real).
+  function extractText(node, isRoot) {
+    let text = "";
+    const children = Array.from(node.childNodes);
+    children.forEach((child, i) => {
+      const isLast = i === children.length - 1;
+      if (child.nodeType === Node.TEXT_NODE) {
+        text += child.nodeValue;
+      } else if (child.nodeName === "BR") {
+        // Ignorar el BR final del nodo raíz: es el caret holder del browser.
+        if (isRoot && isLast) return;
+        text += "\n";
+      } else if (child.nodeName === "DIV" || child.nodeName === "P") {
+        const inner = extractText(child, false);
+        // Ignorar DIV/P vacío al final del raíz (solo tenía el BR de caret holder).
+        if (isRoot && isLast && inner === "") return;
+        text += "\n" + inner;
+      } else {
+        text += extractText(child, false);
+      }
+    });
+    return text;
+  }
+  return extractText(editor, true)
+    .replace(/\u00A0/g, " ")
+    .replace(/\u200B/g, "");
 }
 
 function setEditorText(text) {
@@ -409,14 +438,25 @@ function renderConLinks(container, texto) {
       }
       container.appendChild(a);
     } else {
-      container.appendChild(document.createTextNode(parte));
+      // Dividir por saltos de línea para preservarlos como <br>
+      const lineas = parte.split("\n");
+      lineas.forEach((linea, idx) => {
+        if (linea) {
+          container.appendChild(document.createTextNode(linea));
+        }
+        // Agregar <br> después de cada línea excepto la última
+        if (idx < lineas.length - 1) {
+          container.appendChild(document.createElement("br"));
+        }
+      });
     }
   });
 }
 
 function agregarSpan(color, mensaje, id) {
   mensaje = mensaje.replace(/\u00A0/g, " ").replace(/\u200B/g, "");
-  if (mensaje === "") return;
+  mensaje = mensaje.replace(/\n+$/, "");
+  if (mensaje.trim() === "") return;
   if (id && renderedMessageIds.has(id)) return;
   if (id) renderedMessageIds.add(id);
   const span = document.createElement("span");
@@ -426,10 +466,15 @@ function agregarSpan(color, mensaje, id) {
   committedEl.appendChild(span);
 }
 
+// Flag para bloquear polling mientras se está guardando
+let pollingBloqueado = false;
+
 async function guardar(mensaje) {
   const now = new Date();
   const fecha = now.toISOString().slice(0, 10);
   const hora = now.toTimeString().slice(0, 8);
+
+  pollingBloqueado = true;
   try {
     const res = await fetch(SUPABASE_URL + "/rest/v1/notas", {
       method: "POST",
@@ -445,13 +490,28 @@ async function guardar(mensaje) {
       const rows = await res.json();
       const id = rows?.[0]?.id;
       if (id && id > ultimoId) ultimoId = id;
-      agregarSpan(colorSesion, mensaje);
+      agregarSpan(colorSesion, mensaje, id);
       const localRows = loadLocalMessages();
       if (id && !localRows.some((item) => item.id === id)) {
         localRows.push({ id, mensaje, color: colorSesion });
         saveLocalMessages(localRows);
       }
-      setStatus("✓ guardado", "#4caf50");
+      setCanvasImage(true);
+      // Sonido de confirmación
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.type = "sine";
+        o.frequency.setValueAtTime(880, ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.12);
+        g.gain.setValueAtTime(0.18, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        o.start(ctx.currentTime);
+        o.stop(ctx.currentTime + 0.35);
+      } catch (e) {}
       if (!guardadoEstaSesion) {
         guardadoEstaSesion = true;
         localStorage.setItem("ultimo_color", colorSesion);
@@ -468,6 +528,8 @@ async function guardar(mensaje) {
     saveLocalMessages(localRows);
     agregarSpan(colorSesion, mensaje);
     console.error(e);
+  } finally {
+    pollingBloqueado = false;
   }
 }
 
@@ -497,9 +559,10 @@ const CANVAS_IMAGES = [
   "img/baldio.png",
   "img/grito.jpg",
   "img/chocolino.png",
-  "img/duendes.jpg",
   "img/jirafa.png",
   "img/gatoblanco.png",
+  "img/compu.jpg",
+  "img/tuca1.jpg",
 ];
 
 const btnCanvas = document.getElementById("btn-canvas");
@@ -579,9 +642,9 @@ function mostrarHint() {
     : 'Para guardar tu mensaje presioná <span class="hint-keys"><kbd>Shift</kbd><span class="hint-plus">+</span><kbd>Enter</kbd></span> o la imagen&nbsp;→';
 
   const secuencia = [
-    "En este sitio podés compartir lo que quieras",
-    "Solo se registran fecha y contenido del mensaje",
-    "Todos los mensajes quedan guardados y no se pueden borrar",
+    "En este sitio podés compartir lo que quieras.",
+    "Solo se registran fecha y contenido del mensaje.",
+    "Todos los mensajes quedan guardados y no se pueden borrar.",
     textoFinal,
   ];
 
@@ -625,47 +688,64 @@ function mostrarHint() {
   mostrarPaso();
 }
 
-// Handle canvas click: scroll to bottom if not at bottom, else save
-btnCanvas.addEventListener("click", async () => {
-  if (!estaAlFinal()) {
-    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
-    return;
-  }
-  // At bottom: save if there's text
-  const mensaje = getEditorText();
-  if (!mensaje) return;
-  setEditorText("");
-  updateHeight();
-  focusEditorAtEnd();
-  // Change image on save
-  await setCanvasImage(true);
-  await polling();
-  guardar(mensaje);
+// Handle canvas click: unificado con confirmar()
+// En mobile el browser dispara touchend + click — usamos touchend y cancelamos el click
+btnCanvas.addEventListener(
+  "touchend",
+  (e) => {
+    e.preventDefault(); // evita el click fantasma posterior
+    confirmar();
+  },
+  { passive: false },
+);
+
+btnCanvas.addEventListener("click", (e) => {
+  // En desktop no hay touchend, así que click es el único evento
+  if (e.pointerType === "touch") return; // ya lo manejó touchend
+  confirmar();
 });
 
-function estaCaretVisibleEnViewport() {
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return false;
-  const rect = sel.getRangeAt(0).getBoundingClientRect();
+let guardando = false;
+
+async function confirmar() {
+  if (guardando) return;
+
+  let mensaje = getEditorText();
+  const hayTexto = !!mensaje.trim();
+
+  // Sin texto: solo scrollear al final
+  if (!hayTexto) {
+    if (!estaAlFinal()) {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    }
+    return;
+  }
+
+  // Hay texto: verificar si el editor es visible
+  const rect = editor.getBoundingClientRect();
   const vh = window.visualViewport
     ? window.visualViewport.height
     : window.innerHeight;
-  return rect.bottom > 0 && rect.top < vh;
-}
+  const editorVisible = rect.bottom > 0 && rect.top < vh;
 
-async function confirmar() {
-  if (!estaCaretVisibleEnViewport()) {
-    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+  if (!editorVisible) {
+    // Editor fuera de pantalla → scrollear hacia él
+    editor.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(() => focusEditorAtEnd(), 300);
     return;
   }
-  const mensaje = getEditorText();
-  if (!mensaje) return;
+
+  // Editor visible con texto → guardar
+  // Trim trailing newlines (browser caret holder artifact)
+  mensaje = mensaje.replace(/\n+$/, "");
+  if (!mensaje.trim()) return;
+  guardando = true; // set synchronously before any await to block re-entry
   setEditorText("");
   updateHeight();
   focusEditorAtEnd();
-  await setCanvasImage(true);
-  await polling();
-  guardar(mensaje);
+  guardar(mensaje).finally(() => {
+    guardando = false;
+  });
 }
 
 editor.addEventListener("input", () => {
@@ -780,7 +860,7 @@ async function cargar() {
       committedEl.innerHTML = "";
       ultimoId = 0;
       localRows.forEach((r) => {
-        agregarSpan(r.color || "#000", r.mensaje);
+        agregarSpan(r.color || "#000", r.mensaje, r.id);
         if (r.id && r.id > ultimoId) ultimoId = r.id;
       });
       setStatus("Offline. Mostrando caché local.", "#e53935");
@@ -793,6 +873,7 @@ async function cargar() {
 }
 
 async function polling() {
+  if (pollingBloqueado) return;
   try {
     const res = await fetch(
       SUPABASE_URL +
@@ -809,7 +890,7 @@ async function polling() {
       if (rows.length > 0) {
         const alFinal = estaAlFinal();
         rows.forEach((r) => {
-          agregarSpan(r.color || "#000", r.mensaje);
+          agregarSpan(r.color || "#000", r.mensaje, r.id);
           if (r.id > ultimoId) ultimoId = r.id;
         });
         if (alFinal) {
