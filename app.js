@@ -37,6 +37,9 @@ function loadLocalMessages() {
 let touchStartX = 0;
 let touchStartY = 0;
 let touchMoved = false;
+let lastTapTime = 0;
+let lastTapTarget = null;
+const DOUBLE_TAP_MS = 350; // ventana de tiempo para doble tap
 
 document.addEventListener("pointerdown", (e) => {
   const target = e.target;
@@ -53,7 +56,7 @@ document.addEventListener("pointerdown", (e) => {
   // Si toca el editor directamente: el browser ya maneja el cursor
   if (target === editor || target.closest("#editor")) return;
 
-  // Sobre committed: permitir scroll libre, enfocar al soltar (ver pointerup)
+  // Sobre committed: permitir scroll y lectura libre
   if (target.closest("#committed")) return;
 
   // Zona vacía en desktop: enfocar de inmediato
@@ -61,7 +64,7 @@ document.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     focusEditorAtEnd();
   }
-  // En touch: esperar pointerup para distinguir tap de scroll
+  // En touch: esperar pointerup para detectar doble tap
 });
 
 document.addEventListener("pointermove", (e) => {
@@ -73,14 +76,39 @@ document.addEventListener("pointermove", (e) => {
 
 document.addEventListener("pointerup", (e) => {
   if (e.pointerType !== "touch") return;
-  if (touchMoved) return; // fue scroll, no tap
+  if (touchMoved) {
+    // Fue scroll: resetear estado de doble tap
+    lastTapTime = 0;
+    lastTapTarget = null;
+    return;
+  }
 
   const target = e.target;
   if (target.closest("#btn-canvas") || target.closest("a")) return;
   if (target === editor || target.closest("#editor")) return;
+  if (target.closest("#committed")) return;
 
-  // Tap en cualquier parte de la página → enfocar editor
-  setTimeout(() => focusEditorAtEnd(), 50);
+  // Si el usuario está al final de la página: tap simple alcanza
+  if (estaAlFinal()) {
+    lastTapTime = 0;
+    lastTapTarget = null;
+    setTimeout(() => focusEditorAtEnd(), 50);
+    return;
+  }
+
+  // Scrolleó para arriba: requiere doble tap para no interrumpir la lectura
+  const now = Date.now();
+  const sinceLastTap = now - lastTapTime;
+  if (sinceLastTap < DOUBLE_TAP_MS && lastTapTarget) {
+    // Doble tap → bajar al editor
+    lastTapTime = 0;
+    lastTapTarget = null;
+    setTimeout(() => focusEditorAtEnd(), 50);
+  } else {
+    // Primer tap → registrar y esperar
+    lastTapTime = now;
+    lastTapTarget = target;
+  }
 });
 
 function getEditorText() {
