@@ -1,19 +1,20 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+import { committedEl, editor, statusEl, btnCanvas } from "./dom.js";
+import { setCanvasImage } from "./canvas-button.js";
+import { renderConLinks } from "./embeds.js";
+import { COMANDOS, ejecutarComando, mostrarHint } from "./commands.js";
+
 const SUPABASE_URL = "https://iypxmjxmhlkhkiwadann.supabase.co";
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5cHhtanhtaGxraGtpd2FkYW5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMjk4NTcsImV4cCI6MjA5NjcwNTg1N30.nEahrHZdBETYGRFNtkAKHT8Tig_0crHa5PA9gQ0PVXE";
 
-const committedEl = document.getElementById("committed");
-const editor = document.getElementById("editor");
-const statusEl = document.getElementById("status");
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const TAB = "    ";
-let guardadoEstaSesion = false;
-
-const colorAnterior = localStorage.getItem("ultimo_color");
-const colorSesion = colorAnterior === "#000" ? "#000" : "#000";
+const colorSesion = "#000";
 
 const LOCAL_MESSAGES_KEY = "naim_editor_messages";
-const MUNARI_ANCHOR_KEY = "munari_anchor_id";
 
 function saveLocalMessages(rows) {
   try {
@@ -180,281 +181,9 @@ function setStatus(msg, color) {
     }, 3000);
 }
 
-const URL_REGEX = /(https?:\/\/[^\s]+)/g;
-
-function getEmbedInfo(url) {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace("www.", "");
-
-    // YouTube
-    const ytMatch = url.match(
-      /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/,
-    );
-    if (ytMatch)
-      return {
-        type: "iframe",
-        src: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0&playsinline=1&enablejsapi=1`,
-        w: 560,
-        h: 315,
-      };
-
-    // Vimeo
-    const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
-    if (vimeoMatch)
-      return {
-        type: "iframe",
-        src: `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1`,
-        w: 560,
-        h: 315,
-      };
-
-    // Spotify
-    if (host === "open.spotify.com") {
-      const path = u.pathname;
-      const src = `https://open.spotify.com/embed${path}`;
-      const isTrack = path.startsWith("/track") || path.startsWith("/episode");
-      return { type: "iframe", src, w: 400, h: isTrack ? 152 : 380 };
-    }
-
-    // SoundCloud
-    if (host === "soundcloud.com") {
-      const src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&color=%23ff5500&auto_play=true&visual=true`;
-      return { type: "iframe", src, w: 400, h: 166 };
-    }
-
-    // Twitter/X
-    if (host === "twitter.com" || host === "x.com") {
-      return { type: "twitter", url, w: 400, h: 320 };
-    }
-
-    // Instagram
-    if (host === "instagram.com" && u.pathname.includes("/p/")) {
-      const src = `${url.split("?")[0]}embed/`;
-      return { type: "iframe", src, w: 400, h: 480 };
-    }
-  } catch (e) {}
-  return null;
-}
-
-let activePlayer = null;
 const renderedMessageIds = new Set();
 
-function openEmbed(embedInfo, url) {
-  const isMobile = "ontouchstart" in window || window.innerWidth < 768;
-
-  if (activePlayer) activePlayer.remove();
-
-  const panel = document.createElement("div");
-  panel.id = "embed-player";
-  if (isMobile) panel.classList.add("embed-mobile");
-
-  const toolbar = document.createElement("div");
-  toolbar.id = "embed-toolbar";
-
-  const titleEl = document.createElement("span");
-  titleEl.id = "embed-title";
-  try {
-    titleEl.textContent = new URL(url).hostname.replace("www.", "");
-  } catch (e) {}
-
-  const btnExt = document.createElement("a");
-  btnExt.href = url;
-  btnExt.target = "_blank";
-  btnExt.rel = "noopener noreferrer";
-  btnExt.id = "embed-ext";
-  btnExt.textContent = "↗";
-  btnExt.title = "Abrir en nueva pestaña";
-
-  const btnClose = document.createElement("button");
-  btnClose.id = "embed-close";
-  btnClose.textContent = "✕";
-  btnClose.onclick = () => {
-    panel.remove();
-    activePlayer = null;
-  };
-
-  toolbar.appendChild(titleEl);
-  toolbar.appendChild(btnExt);
-  toolbar.appendChild(btnClose);
-  panel.appendChild(toolbar);
-
-  if (isMobile) {
-    const handle = document.createElement("div");
-    handle.id = "embed-handle";
-    panel.appendChild(handle);
-  }
-
-  const content = document.createElement("div");
-  content.id = "embed-content";
-
-  if (embedInfo.type === "twitter") {
-    const tweetContainer = document.createElement("div");
-    tweetContainer.style.cssText = "overflow:auto;height:100%;padding:8px;";
-    const blockquote = document.createElement("blockquote");
-    blockquote.className = "twitter-tweet";
-    const a = document.createElement("a");
-    a.href = embedInfo.url;
-    blockquote.appendChild(a);
-    tweetContainer.appendChild(blockquote);
-    content.appendChild(tweetContainer);
-    if (!document.getElementById("twitter-widgets-js")) {
-      const script = document.createElement("script");
-      script.id = "twitter-widgets-js";
-      script.src = "https://platform.twitter.com/widgets.js";
-      script.async = true;
-      document.body.appendChild(script);
-    } else if (window.twttr) {
-      window.twttr.widgets.load(tweetContainer);
-    }
-  } else {
-    const iframe = document.createElement("iframe");
-    iframe.src = embedInfo.src;
-    iframe.width = "100%";
-    iframe.height = "100%";
-    iframe.frameBorder = "0";
-    iframe.allow =
-      "autoplay; encrypted-media; fullscreen; clipboard-write; picture-in-picture";
-    iframe.allowFullscreen = true;
-    content.appendChild(iframe);
-  }
-
-  panel.appendChild(content);
-  document.body.appendChild(panel);
-  activePlayer = panel;
-
-  const vw = window.innerWidth;
-  const vh = window.visualViewport
-    ? window.visualViewport.height
-    : window.innerHeight;
-  const toolbarH = 40;
-  const handleH = isMobile ? 12 : 0;
-  const maxPanelWidth = isMobile
-    ? Math.min(vw - 32, 420)
-    : Math.min(embedInfo.w, 560, vw - 24);
-  let contentH = Math.round((embedInfo.h * maxPanelWidth) / embedInfo.w);
-  if (isMobile) {
-    contentH = Math.min(contentH, Math.round(vh * 0.48), 340);
-  }
-  const panelHeight = toolbarH + handleH + contentH;
-
-  panel.style.width = maxPanelWidth + "px";
-  panel.style.height = panelHeight + "px";
-  panel.style.top = "12px";
-  panel.style.left = "50%";
-  panel.style.transform = "translateX(-50%)";
-  panel.style.bottom = "auto";
-
-  if (isMobile) {
-    panel.style.right = "auto";
-  }
-
-  if (isMobile) {
-    let startY = 0;
-    let startTop = 0;
-    panel.addEventListener(
-      "touchstart",
-      (e) => {
-        if (
-          !e.target.closest("#embed-handle") &&
-          !e.target.closest("#embed-toolbar")
-        )
-          return;
-        startY = e.touches[0].clientY;
-        startTop = panel.getBoundingClientRect().top;
-        panel.style.transition = "none";
-      },
-      { passive: true },
-    );
-    panel.addEventListener(
-      "touchmove",
-      (e) => {
-        if (
-          !e.target.closest("#embed-handle") &&
-          !e.target.closest("#embed-toolbar")
-        )
-          return;
-        const dy = e.touches[0].clientY - startY;
-        if (dy > 0) {
-          panel.style.bottom = "auto";
-          panel.style.top = startTop + dy + "px";
-        }
-      },
-      { passive: true },
-    );
-    panel.addEventListener(
-      "touchend",
-      (e) => {
-        const dy = e.changedTouches[0].clientY - startY;
-        if (dy > 80) {
-          panel.remove();
-          activePlayer = null;
-        } else {
-          panel.style.transition = "top 0.2s ease";
-          panel.style.top = "auto";
-          panel.style.bottom = "12px";
-        }
-      },
-      { passive: true },
-    );
-  } else {
-    let dragOffX = 0,
-      dragOffY = 0,
-      dragging = false;
-    toolbar.addEventListener("mousedown", (e) => {
-      dragging = true;
-      dragOffX = e.clientX - panel.getBoundingClientRect().left;
-      dragOffY = e.clientY - panel.getBoundingClientRect().top;
-      panel.style.transition = "none";
-      e.preventDefault();
-    });
-    document.addEventListener("mousemove", (e) => {
-      if (!dragging) return;
-      panel.style.left = e.clientX - dragOffX + "px";
-      panel.style.top = e.clientY - dragOffY + "px";
-    });
-    document.addEventListener("mouseup", () => {
-      dragging = false;
-    });
-  }
-}
-
-function renderConLinks(container, texto) {
-  const partes = texto.split(URL_REGEX);
-  partes.forEach((parte) => {
-    URL_REGEX.lastIndex = 0;
-    if (URL_REGEX.test(parte)) {
-      const embedInfo = getEmbedInfo(parte);
-      const a = document.createElement("a");
-      a.href = parte;
-      a.textContent = parte;
-      a.rel = "noopener noreferrer";
-      if (embedInfo) {
-        a.onclick = (e) => {
-          e.preventDefault();
-          openEmbed(embedInfo, parte);
-        };
-      } else {
-        a.target = "_blank";
-      }
-      container.appendChild(a);
-    } else {
-      // Dividir por saltos de línea para preservarlos como <br>
-      const lineas = parte.split("\n");
-      lineas.forEach((linea, idx) => {
-        if (linea) {
-          container.appendChild(document.createTextNode(linea));
-        }
-        // Agregar <br> después de cada línea excepto la última
-        if (idx < lineas.length - 1) {
-          container.appendChild(document.createElement("br"));
-        }
-      });
-    }
-  });
-}
-
-function agregarSpan(color, mensaje, id, tipo) {
+function agregarSpan(color, mensaje, id) {
   if (id && renderedMessageIds.has(id)) return;
   if (id) renderedMessageIds.add(id);
 
@@ -469,15 +198,11 @@ function agregarSpan(color, mensaje, id, tipo) {
   committedEl.appendChild(span);
 }
 
-// Flag para bloquear polling mientras se está guardando
-let pollingBloqueado = false;
-
-async function guardar(mensaje, tipo) {
+async function guardar(mensaje) {
   const now = new Date();
   const fecha = now.toISOString().slice(0, 10);
   const hora = now.toTimeString().slice(0, 8);
 
-  pollingBloqueado = true;
   try {
     const res = await fetch(SUPABASE_URL + "/rest/v1/notas", {
       method: "POST",
@@ -492,17 +217,15 @@ async function guardar(mensaje, tipo) {
         fecha,
         hora,
         color: colorSesion,
-        ...(tipo ? { tipo } : {}),
       }),
     });
     if (res.ok) {
       const rows = await res.json();
       const id = rows?.[0]?.id;
-      if (id && id > ultimoId) ultimoId = id;
-      agregarSpan(colorSesion, mensaje, id, tipo);
+      agregarSpan(colorSesion, mensaje, id);
       const localRows = loadLocalMessages();
       if (id && !localRows.some((item) => item.id === id)) {
-        localRows.push({ id, mensaje, color: colorSesion, tipo });
+        localRows.push({ id, mensaje, color: colorSesion });
         saveLocalMessages(localRows);
       }
       setCanvasImage(true);
@@ -513,7 +236,7 @@ async function guardar(mensaje, tipo) {
         const g = ctx.createGain();
         o.connect(g);
         g.connect(ctx.destination);
-        o.type = "saw";
+        o.type = "sawtooth";
         o.frequency.setValueAtTime(1320, ctx.currentTime);
         o.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12);
         g.gain.setValueAtTime(0.18, ctx.currentTime);
@@ -521,10 +244,6 @@ async function guardar(mensaje, tipo) {
         o.start(ctx.currentTime);
         o.stop(ctx.currentTime + 0.35);
       } catch (e) {}
-      if (!guardadoEstaSesion) {
-        guardadoEstaSesion = true;
-        localStorage.setItem("ultimo_color", colorSesion);
-      }
       return id || null;
     } else {
       const txt = await res.text();
@@ -540,8 +259,6 @@ async function guardar(mensaje, tipo) {
     agregarSpan(colorSesion, mensaje);
     console.error(e);
     return null;
-  } finally {
-    pollingBloqueado = false;
   }
 }
 
@@ -560,631 +277,10 @@ function insertTextAtCursor(text) {
   scrollToCaret();
 }
 
-// ========================
-// CANVAS BUTTON
-// ========================
-
-const CANVAS_IMAGES = [
-  "img/008000.PNG",
-  "img/Qualquer_Coisa.jpg",
-  "img/YMOCOVER.jpeg",
-  "img/allplastic.PNG",
-  "img/baldio.png",
-  "img/bart.PNG",
-  "img/bart2.PNG",
-  "img/boca.jpg",
-  "img/cafe.jpg",
-  "img/capusotto.PNG",
-  "img/chispas.png",
-  "img/chispi.PNG",
-  "img/chocolino.png",
-  "img/compu.jpg",
-  "img/cosa.PNG",
-  "img/delavega.png",
-  "img/dragon.PNG",
-  "img/duendes.jpg",
-  "img/enano.PNG",
-  "img/enano2.PNG",
-  "img/existenz.jpg",
-  "img/felipe.jpg",
-  "img/flor.jpg",
-  "img/flores.jpg",
-  "img/gato.PNG",
-  "img/gatoabeja.JPG",
-  "img/gatoblanco.png",
-  "img/gatopc.jpg",
-  "img/girasol.png",
-  "img/godzilla.jpg",
-  "img/guaso.jpg",
-  "img/icon.jpg",
-  "img/jirafa.png",
-  "img/kufi.png",
-  "img/leon.PNG",
-  "img/maiz.png",
-  "img/minion.JPG",
-  "img/okapi.jpg",
-  "img/osito.png",
-  "img/pantera.jpg",
-  "img/pikacho.png",
-  "img/rinoceronte.PNG",
-  "img/santaolalla.png",
-  "img/sapos.png",
-  "img/sms_of_death.jpg",
-  "img/vaca.PNG",
-  "img/ventana.png",
-  "img/vibra.JPG",
-  "img/wachin.jpg",
-  "img/zorritos.jpg",
-  "img/francellayfatiga.png",
-];
-
-const btnCanvas = document.getElementById("btn-canvas");
-const ctx = btnCanvas.getContext("2d");
-const CANVAS_IMAGE_KEY = "naim_canvas_image_index";
-const _savedIdx = parseInt(localStorage.getItem(CANVAS_IMAGE_KEY) ?? "-1", 10);
-let currentCanvasImageIndex = -1;
-let canvasImagesLoaded = {};
-
-function loadCanvasImage(src) {
-  if (canvasImagesLoaded[src]) return Promise.resolve(canvasImagesLoaded[src]);
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      canvasImagesLoaded[src] = img;
-      resolve(img);
-    };
-    img.onerror = () => resolve(null);
-    img.src = src;
-  });
-}
-
-function drawCanvasImage(img) {
-  const w = btnCanvas.width;
-  const h = btnCanvas.height;
-  ctx.clearRect(0, 0, w, h);
-  if (img) {
-    ctx.drawImage(img, 0, 0, w, h);
-  } else {
-    // Fallback: draw a simple arrow icon
-    ctx.fillStyle = "#f0f0f0";
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = "#888";
-    ctx.font = `bold ${Math.round(w * 0.38)}px system-ui`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("↓", w / 2, h / 2);
-  }
-}
-
-function pickRandomImageIndex(exclude) {
-  if (CANVAS_IMAGES.length === 1) return 0;
-  let idx;
-  do {
-    idx = Math.floor(Math.random() * CANVAS_IMAGES.length);
-  } while (idx === exclude);
-  return idx;
-}
-
-async function setCanvasImage(forceNew) {
-  // Cancelar animación Munari si estaba activa
-  if (btnCanvas._munariAnimId) {
-    cancelAnimationFrame(btnCanvas._munariAnimId);
-    btnCanvas._munariAnimId = null;
-  }
-  if (btnCanvas._munariCleanup) {
-    btnCanvas._munariCleanup();
-    btnCanvas._munariCleanup = null;
-  }
-  const newIdx = forceNew
-    ? pickRandomImageIndex(currentCanvasImageIndex)
-    : pickRandomImageIndex(_savedIdx);
-  currentCanvasImageIndex = newIdx;
-  localStorage.setItem(CANVAS_IMAGE_KEY, String(newIdx));
-  const src = CANVAS_IMAGES[newIdx];
-  const img = await loadCanvasImage(src);
-  drawCanvasImage(img);
-}
-
 // Init canvas with random image on load
 setCanvasImage(false).then(() => {
   mostrarHint();
 });
-
-// ========================
-// BRUNO MUNARI
-// ========================
-
-function mostrarBrunoMunari() {
-  // Dibuja el Munari directamente en el btnCanvas del botón
-  const S = btnCanvas.width;
-  const ctx2d = ctx; // reusar el contexto del botón
-  const sc = S / 500;
-
-  // Cancelar animación Munari previa si existe
-  if (btnCanvas._munariAnimId) {
-    cancelAnimationFrame(btnCanvas._munariAnimId);
-    btnCanvas._munariAnimId = null;
-  }
-  if (btnCanvas._munariCleanup) {
-    btnCanvas._munariCleanup();
-    btnCanvas._munariCleanup = null;
-  }
-
-  const isMobileDevice = "ontouchstart" in window || window.innerWidth < 768;
-  let mouseRelY = S / 2;
-  let mouseAbsX = window.innerWidth / 2;
-
-  if (!isMobileDevice) {
-    function onMouseMove(e) {
-      const rect = btnCanvas.getBoundingClientRect();
-      const relY = e.clientY - rect.top;
-      mouseRelY = Math.max(0, Math.min(S, relY));
-      mouseAbsX = e.clientX;
-    }
-    document.addEventListener("mousemove", onMouseMove);
-    btnCanvas._munariCleanup = () =>
-      document.removeEventListener("mousemove", onMouseMove);
-  } else {
-    let initialScrollY = window.scrollY;
-    const maxScrollRange = 300;
-    function updateFromScroll() {
-      const delta = window.scrollY - initialScrollY;
-      const clamped = Math.max(
-        -maxScrollRange,
-        Math.min(maxScrollRange, delta),
-      );
-      mouseRelY = ((clamped + maxScrollRange) / (2 * maxScrollRange)) * S;
-      mouseAbsX = window.innerWidth / 2;
-    }
-    window.addEventListener("scroll", updateFromScroll);
-    btnCanvas._munariCleanup = () =>
-      window.removeEventListener("scroll", updateFromScroll);
-  }
-
-  function drawMunari() {
-    ctx2d.clearRect(0, 0, S, S);
-    ctx2d.fillStyle = "#dcdcdc";
-    ctx2d.fillRect(0, 0, S, S);
-    ctx2d.strokeStyle = "#000";
-    ctx2d.lineWidth = 5 * sc;
-    ctx2d.lineCap = "round";
-
-    function line(x1, y1, x2, y2) {
-      ctx2d.beginPath();
-      ctx2d.moveTo(x1 * sc, y1 * sc);
-      ctx2d.lineTo(x2 * sc, y2 * sc);
-      ctx2d.stroke();
-    }
-
-    [50, 150, 250, 350, 450].forEach((x) => line(x, 50, x, 450));
-    [50, 150, 250, 350, 450].forEach((y) => line(50, y, 450, y));
-    line(50, 150, 150, 50);
-    line(150, 50, 250, 150);
-    line(250, 150, 350, 50);
-    line(350, 50, 450, 150);
-    line(150, 250, 250, 350);
-    line(250, 350, 350, 250);
-    line(150, 400, 350, 400);
-
-    const t = mouseRelY / S;
-    const clampedY = 70 + t * (250 - 70);
-
-    const rect = btnCanvas.getBoundingClientRect();
-    const panelCenterX = rect.left + rect.width / 2;
-    const rawX = (mouseAbsX - panelCenterX) / (rect.width * 4);
-    const clampedX = Math.max(-1, Math.min(1, rawX));
-    const DEAD_ZONE = 0.15;
-
-    function eyePos(colX) {
-      if (clampedY < 150) return { x: colX * sc, y: clampedY * sc };
-      if (Math.abs(clampedX) < DEAD_ZONE)
-        return { x: colX * sc, y: clampedY * sc };
-      const tX = Math.min(
-        1,
-        (Math.abs(clampedX) - DEAD_ZONE) / (1 - DEAD_ZONE),
-      );
-      const goingLeft = clampedX < 0;
-      const xMin = colX === 150 ? 70 : 260;
-      const xMax = colX === 150 ? 240 : 430;
-      const ex = colX + tX * ((goingLeft ? xMin : xMax) - colX);
-      return { x: ex * sc, y: 150 * sc };
-    }
-
-    const leftEye = eyePos(150);
-    const rightEye = eyePos(350);
-
-    ctx2d.fillStyle = "#000";
-    ctx2d.beginPath();
-    ctx2d.arc(leftEye.x, leftEye.y, 15 * sc, 0, Math.PI * 2);
-    ctx2d.fill();
-    ctx2d.beginPath();
-    ctx2d.arc(rightEye.x, rightEye.y, 15 * sc, 0, Math.PI * 2);
-    ctx2d.fill();
-
-    btnCanvas._munariAnimId = requestAnimationFrame(drawMunari);
-  }
-
-  drawMunari();
-  // La animación queda activa hasta que el usuario toque el botón.
-  // setCanvasImage() la cancela automáticamente cuando eso ocurre.
-}
-
-const COMANDOS = {
-  "/creadores":
-    "Creado por <a href='https://agustint96.github.io' target='_blank'>Agustín Tardella</a> y <a href='https://interjuegos.neocities.org/' target='_blank'>Naim Goldraij</a>",
-  "/girar": null,
-  "/brunomunari": null,
-  "/pajarosvolando": null,
-};
-
-function girarTexto() {
-  // Inyectar keyframe si no existe
-  if (!document.getElementById("spin-keyframe")) {
-    const style = document.createElement("style");
-    style.id = "spin-keyframe";
-    style.textContent = `
-      @keyframes spinLetter {
-        0%   { display: inline-block; transform: rotate(0deg); }
-        100% { display: inline-block; transform: rotate(2880deg); }
-      }
-      .spin-letter {
-        display: inline-block;
-        animation: spinLetter 4s ease-in-out forwards;
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  // Envolver cada caracter visible en un span animado
-  function envolverTexto(nodo) {
-    if (nodo.nodeType === Node.TEXT_NODE) {
-      const texto = nodo.nodeValue;
-      if (!texto) return;
-      const frag = document.createDocumentFragment();
-      for (const char of texto) {
-        if (char === "\n") {
-          frag.appendChild(document.createTextNode("\n"));
-        } else {
-          const span = document.createElement("span");
-          span.className = "spin-letter";
-          span.style.animationDelay = (Math.random() * 0.6).toFixed(3) + "s";
-          span.textContent = char;
-          frag.appendChild(span);
-        }
-      }
-      nodo.parentNode.replaceChild(frag, nodo);
-    } else if (
-      nodo.nodeType === Node.ELEMENT_NODE &&
-      nodo.nodeName !== "SCRIPT" &&
-      nodo.nodeName !== "STYLE"
-    ) {
-      Array.from(nodo.childNodes).forEach(envolverTexto);
-    }
-  }
-
-  envolverTexto(committedEl);
-  envolverTexto(editor);
-
-  // 4000ms duración + 600ms delay máximo + 200ms margen
-  setTimeout(
-    () => {
-      document.querySelectorAll(".spin-letter").forEach((span) => {
-        const txt = document.createTextNode(span.textContent);
-        span.parentNode.replaceChild(txt, span);
-      });
-      committedEl.normalize();
-      editor.normalize();
-    },
-    4000 + 600 + 200,
-  );
-}
-
-// ========================
-// PÁJAROS VOLANDO
-// ========================
-
-function pajarosVolando() {
-  const vSpans = [];
-
-  function envolverVs(nodo) {
-    if (nodo.nodeType === Node.TEXT_NODE) {
-      const texto = nodo.nodeValue;
-      if (!texto || !/[vV]/.test(texto)) return;
-      const frag = document.createDocumentFragment();
-      for (const char of texto) {
-        if (char === "v" || char === "V") {
-          const span = document.createElement("span");
-          span.className = "pajaro-v";
-          span.textContent = char;
-          frag.appendChild(span);
-          vSpans.push(span);
-        } else {
-          frag.appendChild(document.createTextNode(char));
-        }
-      }
-      nodo.parentNode.replaceChild(frag, nodo);
-    } else if (
-      nodo.nodeType === Node.ELEMENT_NODE &&
-      nodo.nodeName !== "SCRIPT" &&
-      nodo.nodeName !== "STYLE"
-    ) {
-      Array.from(nodo.childNodes).forEach(envolverVs);
-    }
-  }
-
-  envolverVs(committedEl);
-
-  if (!vSpans.length) return;
-
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-
-  // Ocultar todas desde el principio
-  vSpans.forEach((span) => {
-    span.style.visibility = "hidden";
-  });
-
-  // Canvas fijo cubriendo el viewport
-  const cvs = document.createElement("canvas");
-  cvs.style.cssText =
-    "position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:9999;";
-  cvs.width = vw;
-  cvs.height = vh;
-  document.body.appendChild(cvs);
-  const cx = cvs.getContext("2d");
-
-  const DURATION = 10000;
-  const startTs = performance.now();
-
-  // Pool de pájaros activos
-  const birds = [];
-  const launched = new Set();
-
-  // Punto de reunión: centro-derecha del viewport actual, se recalcula por grupo
-  function getGatherPoint() {
-    return {
-      gx: vw * 0.62 + (Math.random() - 0.5) * vw * 0.12,
-      gy: vh * 0.3 + (Math.random() - 0.5) * vh * 0.1,
-    };
-  }
-
-  function makeBird(span, gx, gy, groupDelay) {
-    const rect = span.getBoundingClientRect();
-    return {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
-      vx: 0,
-      vy: 0,
-      gx: gx + (Math.random() - 0.5) * 60, // dispersión dentro del punto
-      gy: gy + (Math.random() - 0.5) * 30,
-      flapOffset: Math.random() * Math.PI * 2,
-      flapSpeed: 170 + Math.random() * 60,
-      size: 11 + Math.random() * 5,
-      t: 0,
-      delay: groupDelay + Math.random() * 80, // pequeño escalonado dentro del grupo
-      phase: "gather", // gather → flock → done
-    };
-  }
-
-  // Lanzar un grupo de spans que acaban de entrar al viewport
-  function launchGroup(spans) {
-    const { gx, gy } = getGatherPoint();
-    spans.forEach((span, i) => {
-      launched.add(span);
-      observer.unobserve(span);
-      birds.push(makeBird(span, gx, gy, i * 30));
-    });
-  }
-
-  // IntersectionObserver con rootMargin 0 — solo dispara cuando realmente entra
-  let pendingGroup = [];
-  let groupTimer = null;
-
-  const observer = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting && !launched.has(entry.target)) {
-          pendingGroup.push(entry.target);
-        }
-      });
-      // Agrupar entradas que llegan juntas en el mismo tick del observer
-      if (pendingGroup.length > 0) {
-        clearTimeout(groupTimer);
-        groupTimer = setTimeout(() => {
-          if (pendingGroup.length > 0) {
-            launchGroup(pendingGroup);
-            pendingGroup = [];
-          }
-        }, 80);
-      }
-    },
-    { threshold: 0.1, rootMargin: "0px" },
-  );
-
-  vSpans.forEach((span) => observer.observe(span));
-
-  function cleanup() {
-    observer.disconnect();
-    clearTimeout(groupTimer);
-    cancelAnimationFrame(animId);
-    cvs.remove();
-    vSpans.forEach((span) => {
-      span.style.visibility = "";
-      const txt = document.createTextNode(span.textContent);
-      if (span.parentNode) span.parentNode.replaceChild(txt, span);
-    });
-    committedEl.normalize();
-  }
-
-  let lastTs = null;
-  let animId;
-
-  function loop(ts) {
-    if (!lastTs) lastTs = ts;
-    const dt = Math.min(ts - lastTs, 50);
-    lastTs = ts;
-    const elapsed = ts - startTs;
-
-    cx.clearRect(0, 0, cvs.width, cvs.height);
-
-    birds.forEach((b) => {
-      if (b.phase === "done") return;
-      if (elapsed < b.delay) return;
-
-      b.t += dt;
-
-      if (b.phase === "gather") {
-        // Volar hacia el punto de reunión
-        const dx = b.gx - b.x;
-        const dy = b.gy - b.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 6) {
-          b.phase = "flock";
-        } else {
-          const accel = Math.min(1, b.t / 350);
-          b.vx += (dx / dist) * 0.4 * accel;
-          b.vy += (dy / dist) * 0.4 * accel;
-          const spd = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
-          const maxSpd = 3.8;
-          if (spd > maxSpd) {
-            b.vx = (b.vx / spd) * maxSpd;
-            b.vy = (b.vy / spd) * maxSpd;
-          }
-          b.x += b.vx;
-          b.y += b.vy;
-        }
-      } else if (b.phase === "flock") {
-        // Volar hacia arriba-derecha saliendo del viewport
-        const angle = -Math.PI / 4 + (Math.random() - 0.5) * 0.01;
-        const targetVx = Math.cos(angle) * 4;
-        const targetVy = Math.sin(angle) * 4;
-        b.vx += (targetVx - b.vx) * 0.06;
-        b.vy += (targetVy - b.vy) * 0.06;
-        b.x += b.vx;
-        b.y += b.vy;
-        if (b.x > cvs.width + 60 || b.y < -60) b.phase = "done";
-      }
-
-      if (b.phase === "done") return;
-
-      // Dibujar alas
-      const flap = Math.sin(b.t / b.flapSpeed + b.flapOffset);
-      const flapR = Math.sin(b.t / b.flapSpeed + b.flapOffset + 0.3);
-      const ws = b.size;
-      cx.save();
-      cx.strokeStyle = "rgb(20,18,12)";
-      cx.lineWidth = 1.5;
-      cx.lineCap = "round";
-      cx.beginPath();
-      cx.moveTo(b.x - ws * 0.5, b.y - ws * 0.38 * (0.5 + 0.5 * flap));
-      cx.quadraticCurveTo(b.x - ws * 0.12, b.y - 1, b.x, b.y);
-      cx.quadraticCurveTo(
-        b.x + ws * 0.12,
-        b.y - 1,
-        b.x + ws * 0.5,
-        b.y - ws * 0.38 * (0.5 + 0.5 * flapR),
-      );
-      cx.stroke();
-      cx.restore();
-    });
-
-    if (elapsed >= DURATION) {
-      cleanup();
-      return;
-    }
-
-    animId = requestAnimationFrame(loop);
-  }
-
-  animId = requestAnimationFrame(loop);
-}
-
-function mostrarHintPersonalizado(texto) {
-  const hintEl = document.getElementById("btn-hint");
-  const hintText = document.getElementById("btn-hint-text");
-
-  hintEl.style.display = "";
-  hintEl.style.pointerEvents = "auto";
-  hintEl.classList.remove("hint-visible", "hint-hiding");
-
-  setTimeout(() => {
-    hintText.innerHTML = texto;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        hintEl.classList.add("hint-visible");
-      });
-    });
-
-    setTimeout(() => {
-      hintEl.classList.add("hint-hiding");
-      hintEl.classList.remove("hint-visible");
-      setTimeout(() => {
-        hintEl.classList.remove("hint-hiding");
-        hintEl.style.pointerEvents = "";
-      }, 400);
-    }, 4000);
-  }, 50);
-}
-
-// ========================
-// HINT DE PRIMER USO
-// ========================
-
-function mostrarHint() {
-  const hintEl = document.getElementById("btn-hint");
-  const hintText = document.getElementById("btn-hint-text");
-  const esMobile = "ontouchstart" in window || window.innerWidth < 768;
-
-  const textoFinal = esMobile
-    ? "Para guardar tu mensaje presioná la imagen&nbsp;→"
-    : 'Para guardar tu mensaje presioná <span class="hint-keys"><kbd>Shift</kbd><span class="hint-plus">+</span><kbd>Enter</kbd></span> o la imagen&nbsp;→';
-
-  const secuencia = [
-    "En este sitio podés compartir lo que quieras.",
-    "Solo se registran fecha y contenido del mensaje.",
-    "Todos los mensajes quedan guardados y no se pueden borrar.",
-    textoFinal,
-  ];
-
-  let paso = 0;
-
-  function mostrarPaso() {
-    // Fade out si ya hay algo visible
-    if (paso > 0) {
-      hintEl.classList.add("hint-hiding");
-      hintEl.classList.remove("hint-visible");
-    }
-
-    const delay = paso === 0 ? 0 : 400; // esperar fade-out antes de cambiar texto
-    setTimeout(() => {
-      hintText.innerHTML = secuencia[paso];
-      hintEl.classList.remove("hint-hiding");
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          hintEl.classList.add("hint-visible");
-        });
-      });
-
-      paso++;
-
-      if (paso < secuencia.length) {
-        // 2 segundos visible, luego siguiente
-        setTimeout(mostrarPaso, 4000);
-      } else {
-        // Último mensaje (hint del botón): ocultar a los 10 segundos
-        setTimeout(() => {
-          hintEl.classList.add("hint-hiding");
-          hintEl.classList.remove("hint-visible");
-          setTimeout(() => {
-            hintEl.style.display = "none";
-          }, 400);
-        }, 10000);
-      }
-    }, delay);
-  }
-
-  mostrarPaso();
-}
 
 // Handle canvas click: unificado con confirmar()
 // En mobile el browser dispara touchend + click — usamos touchend y cancelamos el click
@@ -1241,24 +337,17 @@ async function confirmar() {
   // Verificar si es un comando
   const mensajeLimpio = mensaje.trim().toLowerCase();
 
-  if (mensajeLimpio in COMANDOS) {
+  if (ejecutarComando(mensajeLimpio)) {
     setEditorText("");
+    editor.style.color = TEXTO_COLOR;
     updateHeight();
     focusEditorAtEnd();
-    if (mensajeLimpio === "/girar") {
-      girarTexto();
-    } else if (mensajeLimpio === "/brunomunari") {
-      mostrarBrunoMunari();
-    } else if (mensajeLimpio === "/pajarosvolando") {
-      pajarosVolando();
-    } else if (COMANDOS[mensajeLimpio]) {
-      mostrarHintPersonalizado(COMANDOS[mensajeLimpio]);
-    }
     return;
   }
 
   guardando = true; // set synchronously before any await to block re-entry
   setEditorText("");
+  editor.style.color = TEXTO_COLOR;
   updateHeight();
   focusEditorAtEnd();
   guardar(mensaje).finally(() => {
@@ -1266,9 +355,21 @@ async function confirmar() {
   });
 }
 
+const COMANDO_COLOR = "#7b1fa2";
+const TEXTO_COLOR = "rgba(0, 0, 0, 0.65)";
+
+function actualizarColorEditor() {
+  const texto = getEditorText().trim().toLowerCase();
+  const esComandoOPrefijo =
+    texto.startsWith("/") &&
+    Object.keys(COMANDOS).some((cmd) => cmd.startsWith(texto));
+  editor.style.color = esComandoOPrefijo ? COMANDO_COLOR : TEXTO_COLOR;
+}
+
 editor.addEventListener("input", () => {
   updateHeight();
   scrollToCaret();
+  actualizarColorEditor();
 });
 
 editor.addEventListener("focus", () => {
@@ -1320,8 +421,6 @@ function animarYConfirmar() {
   confirmar();
 }
 
-let ultimoId = 0;
-
 function estaAlFinal() {
   return window.scrollY + window.innerHeight >= document.body.scrollHeight - 60;
 }
@@ -1331,17 +430,15 @@ async function cargar() {
   const localRows = loadLocalMessages();
   if (localRows.length) {
     committedEl.innerHTML = "";
-    ultimoId = 0;
     localRows.forEach((r) => {
-      agregarSpan(r.color || "#000", r.mensaje, r.id, r.tipo);
-      if (r.id > ultimoId) ultimoId = r.id;
+      agregarSpan(r.color || "#000", r.mensaje, r.id);
     });
     setStatus("cargando desde caché...", "#888");
   }
 
   try {
     const res = await fetch(
-      SUPABASE_URL + "/rest/v1/notas?select=id,mensaje,color,tipo&order=id.asc",
+      SUPABASE_URL + "/rest/v1/notas?select=id,mensaje,color&order=id.asc",
       {
         headers: {
           apikey: SUPABASE_KEY,
@@ -1355,8 +452,7 @@ async function cargar() {
         committedEl.innerHTML = "";
       }
       rows.forEach((r) => {
-        agregarSpan(r.color || "#000", r.mensaje, r.id, r.tipo);
-        if (r.id > ultimoId) ultimoId = r.id;
+        agregarSpan(r.color || "#000", r.mensaje, r.id);
       });
       saveLocalMessages(rows);
       setStatus("", "");
@@ -1376,10 +472,8 @@ async function cargar() {
     const localRows = loadLocalMessages();
     if (localRows.length > 0) {
       committedEl.innerHTML = "";
-      ultimoId = 0;
       localRows.forEach((r) => {
         agregarSpan(r.color || "#000", r.mensaje, r.id);
-        if (r.id && r.id > ultimoId) ultimoId = r.id;
       });
       setStatus("Offline. Mostrando caché local.", "#e53935");
     } else {
@@ -1390,27 +484,19 @@ async function cargar() {
   }
 }
 
-async function polling() {
-  if (pollingBloqueado) return;
-  try {
-    const res = await fetch(
-      SUPABASE_URL +
-        `/rest/v1/notas?select=id,mensaje,color,tipo&id=gt.${ultimoId}&order=id.asc`,
-      {
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: "Bearer " + SUPABASE_KEY,
-        },
-      },
-    );
-    if (res.ok) {
-      const rows = await res.json();
-      if (rows.length > 0) {
+// Suscripción en tiempo real: Supabase empuja por websocket cada fila nueva
+// insertada en "notas" (de cualquier usuario, incluido uno mismo) apenas se
+// confirma en la base, sin necesidad de re-consultar periódicamente.
+function iniciarRealtime() {
+  supabase
+    .channel("notas-realtime")
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "notas" },
+      (payload) => {
+        const r = payload.new;
         const alFinal = estaAlFinal();
-        rows.forEach((r) => {
-          agregarSpan(r.color || "#000", r.mensaje, r.id, r.tipo);
-          if (r.id > ultimoId) ultimoId = r.id;
-        });
+        agregarSpan(r.color || "#000", r.mensaje, r.id);
         if (alFinal) {
           requestAnimationFrame(() => {
             window.scrollTo({
@@ -1419,11 +505,9 @@ async function polling() {
             });
           });
         }
-      }
-    }
-  } catch (e) {
-    console.error("polling error:", e);
-  }
+      },
+    )
+    .subscribe();
 }
 
 updateHeight();
@@ -1436,5 +520,5 @@ if (window.visualViewport) {
   });
 }
 cargar().then(() => {
-  setInterval(polling, 5000);
+  iniciarRealtime();
 });
