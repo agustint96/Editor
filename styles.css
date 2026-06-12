@@ -103,7 +103,8 @@ body {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   border-radius: 0;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 20px rgba(2, 11, 54, 0.404);
+  border: 3px solid rgba(0, 0, 0, 0.08);
   transition:
     transform 0.15s,
     box-shadow 0.15s;
@@ -112,7 +113,7 @@ body {
 #btn-canvas:active,
 #btn-canvas.canvas-pressed {
   transform: scale(0.93);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 20px rgba(99, 59, 161, 0.404);
 }
 
 /* =========================
@@ -439,9 +440,10 @@ body {
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 10px;
   padding: 8px 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 20px rgba(2, 11, 54, 0.404);
   font-family: system-ui, sans-serif;
   font-size: 0.8em;
+  font-weight: 500;
   color: #555;
   line-height: 1.5;
   max-width: 240px;
@@ -453,14 +455,18 @@ body {
 
 #btn-hint.hint-visible {
   opacity: 1;
+  font-size: 1em;
 }
 
 #btn-hint.hint-hiding {
   opacity: 0;
+  font-weight: 500;
+  font-size: 1em;
 }
 
 #btn-hint-text {
   display: block;
+  font-size: 1em;
 }
 
 #btn-hint a,
@@ -508,9 +514,8 @@ body {
     /* botón: right 1.4rem, width 120px → hint queda a la izquierda con 12px de gap */
     right: calc(1.4rem + 120px + 12px);
     bottom: calc(1.4rem + 60px); /* mismo centro vertical que el botón */
-    max-width: calc(
-      100vw - 1.4rem - 120px - 12px - 1rem
-    ); /* no se sale por la izquierda */
+    max-width: calc(100vw - 1.4rem - 120px - 12px - 1rem);
+    font-weight: 500; /* no se sale por la izquierda */
   }
 }
 
@@ -518,6 +523,7 @@ body {
   #btn-hint {
     right: calc(1.6rem + 108px + 14px);
     bottom: calc(1.6rem + 54px);
+    font-weight: 500;
   }
 }
 
