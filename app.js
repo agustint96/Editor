@@ -1132,15 +1132,33 @@ editor.addEventListener("keydown", (e) => {
       range.deleteContents();
       const br = document.createElement("br");
       range.insertNode(br);
-      // Después del BR necesitamos un nodo de texto vacío para que el cursor
-      // se posicione correctamente; si el BR es el último nodo, el browser
-      // puede confundirse.
-      const after = document.createTextNode("");
-      br.parentNode.insertBefore(after, br.nextSibling);
-      range.setStartAfter(br);
-      range.collapse(true);
+
+      // Para que el cursor quede visualmente en la nueva línea, el browser
+      // necesita un nodo de texto con contenido real *o* un segundo BR cuando
+      // el BR insertado es el último nodo del editor. Un TextNode("") no ocupa
+      // espacio y el caret no tiene dónde anclarse, por eso el primer Enter
+      // parecía no funcionar.
+      //
+      // Solución: posicionar el cursor usando el índice de offset dentro del
+      // nodo padre en lugar de setStartAfter(br), y agregar un BR fantasma
+      // solo si el br es el último hijo (así el browser siempre tiene "algo"
+      // después del caret).
+      const parent = br.parentNode;
+      const brIndex = Array.prototype.indexOf.call(parent.childNodes, br);
+
+      if (!br.nextSibling) {
+        // BR al final del editor: agregar un BR centinela para que el caret
+        // tenga una posición real en la línea siguiente.
+        const sentinel = document.createElement("br");
+        parent.appendChild(sentinel);
+      }
+
+      // Posicionar el cursor justo después del BR recién insertado
+      const newRange = document.createRange();
+      newRange.setStart(parent, brIndex + 1);
+      newRange.collapse(true);
       sel.removeAllRanges();
-      sel.addRange(range);
+      sel.addRange(newRange);
     }
     updateHeight();
     scrollToCaret();
