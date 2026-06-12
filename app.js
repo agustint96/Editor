@@ -615,6 +615,7 @@ const CANVAS_IMAGES = [
   "img/vibra.JPG",
   "img/wachin.jpg",
   "img/zorritos.jpg",
+  "img/francellayfatiga.png",
 ];
 
 const btnCanvas = document.getElementById("btn-canvas");
