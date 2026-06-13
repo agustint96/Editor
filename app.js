@@ -35,6 +35,58 @@ function loadLocalMessages() {
   }
 }
 
+// ========================
+// SEPARADOR DE FECHA
+// ========================
+// La columna "fecha" ya viene en formato "YYYY-MM-DD" hora Argentina.
+
+function formatearFechaSeparador(isoDate) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const fecha = new Date(y, m - 1, d);
+  const txt = fecha.toLocaleDateString("es-AR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  return txt.charAt(0).toUpperCase() + txt.slice(1);
+}
+
+function insertarSeparadorFecha(isoDate) {
+  const div = document.createElement("div");
+  div.className = "date-separator";
+  div.textContent = formatearFechaSeparador(isoDate);
+  committedEl.appendChild(div);
+}
+
+// Rastrea el último día renderizado para saber cuándo insertar un separador
+let ultimaFechaRenderizada = null;
+
+// Renderiza un mensaje, insertando separador de día si corresponde
+function agregarMensaje(color, mensaje, id, fecha) {
+  if (id && renderedMessageIds.has(id)) return;
+  if (id) renderedMessageIds.add(id);
+
+  mensaje = mensaje.replace(/\u00A0/g, " ").replace(/\u200B/g, "");
+  mensaje = mensaje.replace(/\n+$/, "");
+  if (mensaje.trim() === "") return;
+
+  // Insertar separador si cambió el día
+  if (fecha) {
+    const fechaDia = fecha.slice(0, 10); // "YYYY-MM-DD"
+    if (fechaDia !== ultimaFechaRenderizada) {
+      insertarSeparadorFecha(fechaDia);
+      ultimaFechaRenderizada = fechaDia;
+    }
+  }
+
+  const span = document.createElement("span");
+  span.className = "msg";
+  span.style.color = color;
+  if (id) span.dataset.id = id;
+  renderConLinks(span, mensaje);
+  committedEl.appendChild(span);
+}
+
 let touchStartX = 0;
 let touchStartY = 0;
 let touchMoved = false;
@@ -95,11 +147,6 @@ document.addEventListener("pointerup", (e) => {
 });
 
 function getEditorText() {
-  // Recorrer el DOM del editor para extraer texto preservando saltos de línea
-  // correctamente, sin depender de innerText que puede romper con divs generados
-  // por el browser al presionar Enter después de un link.
-  // isRoot indica que estamos en el nodo raíz del editor, donde el browser
-  // siempre agrega un BR o DIV vacío final como "caret holder" (no es texto real).
   function extractText(node, isRoot) {
     let text = "";
     const children = Array.from(node.childNodes);
@@ -108,12 +155,10 @@ function getEditorText() {
       if (child.nodeType === Node.TEXT_NODE) {
         text += child.nodeValue;
       } else if (child.nodeName === "BR") {
-        // Ignorar el BR final del nodo raíz: es el caret holder del browser.
         if (isRoot && isLast) return;
         text += "\n";
       } else if (child.nodeName === "DIV" || child.nodeName === "P") {
         const inner = extractText(child, false);
-        // Ignorar DIV/P vacío al final del raíz (solo tenía el BR de caret holder).
         if (isRoot && isLast && inner === "") return;
         text += "\n" + inner;
       } else {
@@ -183,21 +228,6 @@ function setStatus(msg, color) {
 
 const renderedMessageIds = new Set();
 
-function agregarSpan(color, mensaje, id) {
-  if (id && renderedMessageIds.has(id)) return;
-  if (id) renderedMessageIds.add(id);
-
-  mensaje = mensaje.replace(/\u00A0/g, " ").replace(/\u200B/g, "");
-  mensaje = mensaje.replace(/\n+$/, "");
-  if (mensaje.trim() === "") return;
-  const span = document.createElement("span");
-  span.className = "msg";
-  span.style.color = color;
-  if (id) span.dataset.id = id;
-  renderConLinks(span, mensaje);
-  committedEl.appendChild(span);
-}
-
 async function guardar(mensaje) {
   const now = new Date();
   const fecha = now.toISOString().slice(0, 10);
@@ -222,10 +252,11 @@ async function guardar(mensaje) {
     if (res.ok) {
       const rows = await res.json();
       const id = rows?.[0]?.id;
-      agregarSpan(colorSesion, mensaje, id);
+      const fecha = rows?.[0]?.fecha;
+      agregarMensaje(colorSesion, mensaje, id, fecha);
       const localRows = loadLocalMessages();
       if (id && !localRows.some((item) => item.id === id)) {
-        localRows.push({ id, mensaje, color: colorSesion });
+        localRows.push({ id, mensaje, color: colorSesion, fecha: fecha });
         saveLocalMessages(localRows);
       }
       setCanvasImage(true);
@@ -256,7 +287,7 @@ async function guardar(mensaje) {
     const localRows = loadLocalMessages();
     localRows.push({ id: Date.now(), mensaje, color: colorSesion });
     saveLocalMessages(localRows);
-    agregarSpan(colorSesion, mensaje);
+    agregarMensaje(colorSesion, mensaje);
     console.error(e);
     return null;
   }
@@ -283,19 +314,17 @@ setCanvasImage(false).then(() => {
 });
 
 // Handle canvas click: unificado con confirmar()
-// En mobile el browser dispara touchend + click — usamos touchend y cancelamos el click
 btnCanvas.addEventListener(
   "touchend",
   (e) => {
-    e.preventDefault(); // evita el click fantasma posterior
+    e.preventDefault();
     confirmar();
   },
   { passive: false },
 );
 
 btnCanvas.addEventListener("click", (e) => {
-  // En desktop no hay touchend, así que click es el único evento
-  if (e.pointerType === "touch") return; // ya lo manejó touchend
+  if (e.pointerType === "touch") return;
   confirmar();
 });
 
@@ -307,7 +336,6 @@ async function confirmar() {
   let mensaje = getEditorText();
   const hayTexto = !!mensaje.trim();
 
-  // Sin texto: solo scrollear al final
   if (!hayTexto) {
     if (!estaAlFinal()) {
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
@@ -315,7 +343,6 @@ async function confirmar() {
     return;
   }
 
-  // Hay texto: verificar si el editor es visible
   const rect = editor.getBoundingClientRect();
   const vh = window.visualViewport
     ? window.visualViewport.height
@@ -323,18 +350,14 @@ async function confirmar() {
   const editorVisible = rect.bottom > 0 && rect.top < vh;
 
   if (!editorVisible) {
-    // Editor fuera de pantalla → scrollear hacia él
     editor.scrollIntoView({ block: "center", behavior: "smooth" });
     setTimeout(() => focusEditorAtEnd(), 300);
     return;
   }
 
-  // Editor visible con texto → guardar
-  // Trim trailing newlines (browser caret holder artifact)
   mensaje = mensaje.replace(/\n+$/, "");
   if (!mensaje.trim()) return;
 
-  // Verificar si es un comando
   const mensajeLimpio = mensaje.trim().toLowerCase();
 
   if (ejecutarComando(mensajeLimpio)) {
@@ -345,7 +368,7 @@ async function confirmar() {
     return;
   }
 
-  guardando = true; // set synchronously before any await to block re-entry
+  guardando = true;
   setEditorText("");
   editor.style.color = TEXTO_COLOR;
   updateHeight();
@@ -430,15 +453,17 @@ async function cargar() {
   const localRows = loadLocalMessages();
   if (localRows.length) {
     committedEl.innerHTML = "";
+    ultimaFechaRenderizada = null;
     localRows.forEach((r) => {
-      agregarSpan(r.color || "#000", r.mensaje, r.id);
+      agregarMensaje(r.color || "#000", r.mensaje, r.id, r.fecha);
     });
     setStatus("cargando desde caché...", "#888");
   }
 
   try {
     const res = await fetch(
-      SUPABASE_URL + "/rest/v1/notas?select=id,mensaje,color&order=id.asc",
+      SUPABASE_URL +
+        "/rest/v1/notas?select=id,mensaje,color,fecha&order=id.asc",
       {
         headers: {
           apikey: SUPABASE_KEY,
@@ -450,9 +475,10 @@ async function cargar() {
       const rows = await res.json();
       if (!localRows.length) {
         committedEl.innerHTML = "";
+        ultimaFechaRenderizada = null;
       }
       rows.forEach((r) => {
-        agregarSpan(r.color || "#000", r.mensaje, r.id);
+        agregarMensaje(r.color || "#000", r.mensaje, r.id, r.fecha);
       });
       saveLocalMessages(rows);
       setStatus("", "");
@@ -472,8 +498,9 @@ async function cargar() {
     const localRows = loadLocalMessages();
     if (localRows.length > 0) {
       committedEl.innerHTML = "";
+      ultimaFechaRenderizada = null;
       localRows.forEach((r) => {
-        agregarSpan(r.color || "#000", r.mensaje, r.id);
+        agregarMensaje(r.color || "#000", r.mensaje, r.id, r.fecha);
       });
       setStatus("Offline. Mostrando caché local.", "#e53935");
     } else {
@@ -484,9 +511,6 @@ async function cargar() {
   }
 }
 
-// Suscripción en tiempo real: Supabase empuja por websocket cada fila nueva
-// insertada en "notas" (de cualquier usuario, incluido uno mismo) apenas se
-// confirma en la base, sin necesidad de re-consultar periódicamente.
 function iniciarRealtime() {
   supabase
     .channel("notas-realtime")
@@ -496,7 +520,7 @@ function iniciarRealtime() {
       (payload) => {
         const r = payload.new;
         const alFinal = estaAlFinal();
-        agregarSpan(r.color || "#000", r.mensaje, r.id);
+        agregarMensaje(r.color || "#000", r.mensaje, r.id, r.fecha);
         if (alFinal) {
           requestAnimationFrame(() => {
             window.scrollTo({

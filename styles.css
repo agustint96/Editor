@@ -53,6 +53,18 @@ body {
   color: #1558b0;
 }
 
+/* Línea separadora de día */
+#committed .date-separator {
+  display: block;
+  text-align: center;
+  color: #ccc;
+  font-size: 0.78em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 1.8em 0 1.2em;
+  user-select: none;
+}
+
 /* El área donde el usuario escribe - editor nativo contenteditable */
 #editor {
   display: inline;
@@ -283,98 +295,150 @@ body {
 #embed-player {
   position: fixed;
   z-index: 9999;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  background: transparent;
+  border: 3px solid rgba(0, 0, 0, 0.08);
+  border-radius: 0;
+  box-shadow: 0 8px 20px rgba(2, 11, 54, 0.404);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-width: 280px;
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
-  resize: both;
+  resize: none;
+  clip-path: none;
 }
 
-#embed-player.embed-mobile {
-  width: auto;
-  max-width: calc(100vw - 24px);
-  min-width: 280px;
-  border-radius: 16px;
+/* Sin ::before blur — el panel es opaco como el botón canvas */
+#embed-player::before {
+  display: none;
 }
 
-#embed-player.embed-mobile #embed-handle {
-  height: 8px;
-  width: 36px;
-  margin: 10px auto 4px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.12);
-}
-
+/* ── Toolbar ── */
 #embed-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  height: 40px;
-  background: #fafafa;
-  border-bottom: 1px solid #eee;
+  gap: 6px;
+  padding: 0 10px 0 14px;
+  height: 44px;
+  /* Gris translúcido como el nav del browser */
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   cursor: grab;
   user-select: none;
   flex-shrink: 0;
   touch-action: none;
+  position: relative;
+  z-index: 1;
 }
 
 #embed-toolbar:active {
   cursor: grabbing;
 }
 
+/* Contenido sobre el ::before del panel */
+#embed-content {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+/* En mobile el content es absoluto para cubrir todo el cuadrado */
+.embed-mobile #embed-content {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+/* Icono de arrastre — seis puntos */
+#embed-drag-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  opacity: 0.35;
+  gap: 3px;
+}
+
+#embed-drag-icon span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+#embed-drag-icon span i {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #000000;
+}
+
 #embed-title {
   flex: 1;
-  font-size: 0.8em;
-  color: #888;
+  font-size: 0.78em;
+  color: #000000;
   font-family: system-ui, sans-serif;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: 0.01em;
 }
 
 #embed-ext {
-  font-size: 0.93em;
-  color: #aaa;
+  font-size: 1em;
+  color: #000000;
   text-decoration: none;
   line-height: 1;
-  padding: 4px;
-  border-radius: 4px;
-  transition: color 0.15s;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  flex-shrink: 0;
 }
 
 #embed-ext:hover {
-  color: #555;
+  color: #444;
+  background: rgba(0, 0, 0, 0.06);
 }
 
 #embed-close {
   background: none;
   border: none;
-  font-size: 0.87em;
-  color: #aaa;
+  font-size: 0.9em;
+  color: #000;
   cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
   line-height: 1;
   font-family: system-ui, sans-serif;
-  transition: color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  flex-shrink: 0;
 }
 
 #embed-close:hover {
   color: #333;
+  background: rgba(0, 0, 0, 0.06);
 }
 
-#embed-content {
-  flex: 1;
-  overflow: hidden;
-}
-
+/* ── Contenido ── */
 #embed-content iframe {
   display: block;
   border: none;
@@ -382,7 +446,33 @@ body {
   height: 100%;
 }
 
-/* Handle de swipe (solo mobile) */
+/* ── Handle de resize custom (esquina inferior derecha) ── */
+#embed-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 28px;
+  height: 28px;
+  cursor: se-resize;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 5px;
+  /* bloquea eventos al iframe para que no robe el mouse */
+  pointer-events: all;
+}
+
+#embed-resize-handle svg {
+  opacity: 0.3;
+  transition: opacity 0.15s;
+}
+
+#embed-resize-handle:hover svg {
+  opacity: 0.7;
+}
+
+/* ── Handle de swipe (solo mobile) ── */
 #embed-handle {
   width: 100%;
   height: 20px;
@@ -403,25 +493,85 @@ body {
   background: #ccc;
 }
 
-/* Panel en modo mobile: tamaño proporcional y centrado arriba */
+/* Panel en modo mobile: cuadrado compacto, misma esquina y margen que el botón */
 #embed-player.embed-mobile {
-  left: 50% !important;
-  top: 12px !important;
-  bottom: auto !important;
-  width: auto !important;
-  max-width: calc(100vw - 24px) !important;
-  min-width: 280px !important;
-  border-radius: 16px !important;
+  border-radius: 0;
+  clip-path: none;
+  overflow: hidden;
   resize: none;
-  transform: translateX(-50%) !important;
-  transition:
-    top 0.2s ease,
-    left 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  position: fixed;
 }
 
-#embed-player.embed-mobile #embed-toolbar {
-  cursor: default;
+/* Botón cerrar flotante dentro del cuadrado mobile */
+#embed-close-mobile {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.45);
+  border: none;
+  color: #fff;
+  font-size: 0.75em;
+  width: 22px;
+  height: 22px;
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
 }
+
+/* Handle de arrastre en la parte inferior del cuadrado mobile */
+#embed-player.embed-mobile #embed-handle {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.28), transparent);
+  border-radius: 0;
+  z-index: 5;
+}
+
+#embed-player.embed-mobile #embed-handle::after {
+  content: "";
+  display: block;
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* Handle de resize esquina inferior derecha (solo mobile) */
+#embed-resize-mobile {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 36px;
+  height: 36px;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 6px;
+  touch-action: none;
+  cursor: se-resize;
+}
+
+#embed-resize-mobile svg {
+  opacity: 0.7;
+}
+
+/* Posición inicial del embed-player manejada por JS en openEmbed() */
 
 /* ========================
    HINT DEL BOTÓN

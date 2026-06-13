@@ -269,8 +269,25 @@ function pajarosVolando() {
     };
   }
 
+  // Paleta de pasteles suaves que itera secuencialmente
+  const BIRD_COLORS = [
+    "#f9c4d2", // rosa
+    "#b8e0f7", // celeste
+    "#b8f0d0", // verde menta
+    "#fef3a0", // amarillo
+    "#d4c4f9", // lila
+    "#ffd6b0", // durazno
+    "#c4f0f0", // turquesa claro
+    "#f9d4b8", // salmón
+    "#c8f9c4", // verde agua
+    "#f9b8e8", // rosa chicle
+  ];
+  let birdColorIndex = 0;
+
   function makeBird(span, gx, gy, groupDelay) {
     const rect = span.getBoundingClientRect();
+    const bgColor = BIRD_COLORS[birdColorIndex % BIRD_COLORS.length];
+    birdColorIndex++;
     return {
       x: rect.left + rect.width / 2,
       y: rect.top + rect.height / 2,
@@ -284,6 +301,7 @@ function pajarosVolando() {
       t: 0,
       delay: groupDelay + Math.random() * 80, // pequeño escalonado dentro del grupo
       phase: "gather", // gather → flock → done
+      bgColor,
     };
   }
 
@@ -392,6 +410,29 @@ function pajarosVolando() {
       const flap = Math.sin(b.t / b.flapSpeed + b.flapOffset);
       const flapR = Math.sin(b.t / b.flapSpeed + b.flapOffset + 0.3);
       const ws = b.size;
+
+      // Ángulo de vuelo para rotar el recorte
+      const angle = Math.atan2(b.vy, b.vx) || -Math.PI / 4;
+
+      cx.save();
+      cx.translate(b.x, b.y);
+      cx.rotate(angle);
+
+      // 1. Recorte de papel: rectángulo centrado, más ancho que alto
+      const rw = ws * 1.6;
+      const rh = ws * 0.9;
+      cx.beginPath();
+      cx.roundRect(-rw / 2, -rh / 2, rw, rh, 2);
+      cx.fillStyle = b.bgColor;
+      cx.fill();
+      // Borde sutil para que se lea como recorte
+      cx.strokeStyle = "rgba(0,0,0,0.18)";
+      cx.lineWidth = 0.7;
+      cx.stroke();
+
+      cx.restore();
+
+      // 2. Trazo de las alas encima (en coordenadas globales, sin rotar)
       cx.save();
       cx.strokeStyle = "rgb(20,18,12)";
       cx.lineWidth = 1.5;
