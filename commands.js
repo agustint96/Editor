@@ -254,7 +254,7 @@ function pajarosVolando() {
   document.body.appendChild(cvs);
   const cx = cvs.getContext("2d");
 
-  const DURATION = 10000;
+  const DURATION = 20000;
   const startTs = performance.now();
 
   // Pool de pájaros activos
@@ -271,16 +271,16 @@ function pajarosVolando() {
 
   // Paleta de pasteles suaves que itera secuencialmente
   const BIRD_COLORS = [
-    "#f9c4d2", // rosa
-    "#b8e0f7", // celeste
-    "#b8f0d0", // verde menta
-    "#fef3a0", // amarillo
-    "#d4c4f9", // lila
-    "#ffd6b0", // durazno
-    "#c4f0f0", // turquesa claro
-    "#f9d4b8", // salmón
-    "#c8f9c4", // verde agua
-    "#f9b8e8", // rosa chicle
+    "#eeebeb", // rosa
+    "#eeebeb", // celeste
+    "#eeebeb", // verde menta
+    "#eeebeb", // amarillo
+    "#eeebeb", // lila
+    "#eeebeb", // durazno
+    "#eeebeb", // turquesa claro
+    "#eeebeb", // salmón
+    "#eeebeb", // verde agua
+    "#eeebeb", // rosa chicle
   ];
   let birdColorIndex = 0;
 

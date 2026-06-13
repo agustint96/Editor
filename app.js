@@ -60,6 +60,11 @@ function insertarSeparadorFecha(isoDate) {
 
 // Rastrea el último día renderizado para saber cuándo insertar un separador
 let ultimaFechaRenderizada = null;
+// Rastrea el día más antiguo cargado (para paginación hacia atrás)
+let fechaMasAntigua = null;
+// Flags de paginación
+let hasMasHistoria = true;
+let cargandoHistoria = false;
 
 // Renderiza un mensaje, insertando separador de día si corresponde
 function agregarMensaje(color, mensaje, id, fecha) {
@@ -86,6 +91,153 @@ function agregarMensaje(color, mensaje, id, fecha) {
   renderConLinks(span, mensaje);
   committedEl.appendChild(span);
 }
+
+// Prependea mensajes y separadores al inicio del committedEl (para historia)
+function prependearMensajes(rows) {
+  if (!rows.length) return;
+
+  // Construir un fragment con los mensajes del día anterior
+  const frag = document.createDocumentFragment();
+  let fechaDelBloque = null;
+
+  rows.forEach((r) => {
+    const fechaDia = (r.fecha || "").slice(0, 10);
+    if (!fechaDelBloque) fechaDelBloque = fechaDia;
+
+    const span = document.createElement("span");
+    span.className = "msg";
+    span.style.color = r.color || "#000";
+    if (r.id) {
+      span.dataset.id = String(r.id);
+      renderedMessageIds.add(r.id);
+    }
+    let msg = (r.mensaje || "")
+      .replace(/\u00A0/g, " ")
+      .replace(/\u200B/g, "")
+      .replace(/\n+$/, "");
+    if (!msg.trim()) return;
+    renderConLinks(span, msg);
+    frag.appendChild(span);
+  });
+
+  // Separador del bloque (va al inicio del fragment)
+  if (fechaDelBloque) {
+    const div = document.createElement("div");
+    div.className = "date-separator";
+    div.textContent = formatearFechaSeparador(fechaDelBloque);
+    frag.insertBefore(div, frag.firstChild);
+    fechaMasAntigua = fechaDelBloque;
+  }
+
+  // Preservar posición de scroll al insertar arriba
+  const scrollBefore = document.body.scrollHeight;
+  committedEl.insertBefore(frag, committedEl.firstChild);
+  const added = document.body.scrollHeight - scrollBefore;
+  window.scrollBy(0, added);
+}
+
+// Calcula la fecha de ayer relativa a una fecha "YYYY-MM-DD"
+function fechaAnterior(isoDate) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
+
+// Carga un día anterior desde Supabase y lo prepende
+async function cargarDiaAnterior() {
+  if (cargandoHistoria || !hasMasHistoria || !fechaMasAntigua) return;
+  cargandoHistoria = true;
+  const diaAPedir = fechaAnterior(fechaMasAntigua);
+  setStatus("cargando historia...", "#aaa");
+
+  // Pequeño retardo para que se sienta como una carga real
+  await new Promise((r) => setTimeout(r, 380));
+
+  try {
+    const res = await fetch(
+      SUPABASE_URL +
+        "/rest/v1/notas?select=id,mensaje,color,fecha&fecha=eq." +
+        diaAPedir +
+        "&order=id.asc",
+      {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: "Bearer " + SUPABASE_KEY,
+        },
+      },
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      if (!rows.length) {
+        // No hay mensajes ese día — intentar días más atrás buscando el anterior con datos
+        // Marcar como fecha más antigua sin datos y seguir retrocediendo
+        fechaMasAntigua = diaAPedir;
+        // Buscar si hay algo antes
+        const resPrev = await fetch(
+          SUPABASE_URL +
+            "/rest/v1/notas?select=fecha&fecha=lt." +
+            diaAPedir +
+            "&order=fecha.desc&limit=1",
+          {
+            headers: {
+              apikey: SUPABASE_KEY,
+              Authorization: "Bearer " + SUPABASE_KEY,
+            },
+          },
+        );
+        if (resPrev.ok) {
+          const prevRows = await resPrev.json();
+          if (!prevRows.length) {
+            hasMasHistoria = false;
+            setStatus("", "");
+          } else {
+            // Hay más historia, pero el día inmediato anterior estaba vacío
+            // Actualizar fechaMasAntigua al día que tiene el próximo dato
+            fechaMasAntigua = prevRows[0].fecha.slice(0, 10);
+            // Cargar ese día
+            cargandoHistoria = false;
+            await cargarDiaAnterior();
+            return;
+          }
+        } else {
+          hasMasHistoria = false;
+        }
+      } else {
+        prependearMensajes(rows);
+        // Actualizar caché local (agregar al inicio)
+        const localRows = loadLocalMessages();
+        const ids = new Set(localRows.map((r) => r.id));
+        const nuevos = rows.filter((r) => !ids.has(r.id));
+        saveLocalMessages([...nuevos, ...localRows]);
+      }
+      setStatus("", "");
+    } else {
+      setStatus("✗ error al cargar historia", "#e53935");
+    }
+  } catch (e) {
+    // Offline: intentar desde caché local
+    const localRows = loadLocalMessages();
+    const diaRows = localRows.filter(
+      (r) => (r.fecha || "").slice(0, 10) === diaAPedir,
+    );
+    if (diaRows.length) {
+      prependearMensajes(diaRows);
+    } else {
+      hasMasHistoria = false;
+    }
+    setStatus("", "");
+  }
+
+  cargandoHistoria = false;
+}
+
+// Listener de scroll para cargar historia al llegar al top
+window.addEventListener("scroll", () => {
+  if (window.scrollY < 40 && hasMasHistoria && !cargandoHistoria) {
+    cargarDiaAnterior();
+  }
+});
 
 let touchStartX = 0;
 let touchStartY = 0;
@@ -434,7 +586,48 @@ editor.addEventListener("keydown", (e) => {
     e.preventDefault();
     animarYConfirmar();
   }
+
+  // Atajos de formato: Ctrl/Cmd + B / I / U
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+    const formatMap = { b: ["**", "**"], i: ["*", "*"], u: ["__", "__"] };
+    const fmt = formatMap[e.key.toLowerCase()];
+    if (fmt) {
+      e.preventDefault();
+      aplicarFormato(fmt[0], fmt[1]);
+    }
+  }
 });
+
+function aplicarFormato(abre, cierra) {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  const textoSeleccionado = range.toString();
+
+  if (textoSeleccionado) {
+    // Hay selección: envolver con las marcas
+    range.deleteContents();
+    const nodo = document.createTextNode(abre + textoSeleccionado + cierra);
+    range.insertNode(nodo);
+    // Mover cursor al final
+    range.setStartAfter(nodo);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } else {
+    // Sin selección: insertar marcas y poner cursor en el medio
+    const marcas = document.createTextNode(abre + cierra);
+    range.insertNode(marcas);
+    // Posicionar cursor entre abre y cierra
+    const newRange = document.createRange();
+    newRange.setStart(marcas, abre.length);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+  }
+  updateHeight();
+  scrollToCaret();
+}
 
 function animarYConfirmar() {
   btnCanvas.classList.add("canvas-pressed");
@@ -448,22 +641,39 @@ function estaAlFinal() {
   return window.scrollY + window.innerHeight >= document.body.scrollHeight - 60;
 }
 
+function fechaHoy() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 async function cargar() {
   setStatus("cargando...", "#aaa");
+  const hoy = fechaHoy();
   const localRows = loadLocalMessages();
+
+  // Mostrar solo los de hoy desde caché mientras llega Supabase
   if (localRows.length) {
+    const localHoy = localRows.filter(
+      (r) => (r.fecha || "").slice(0, 10) === hoy,
+    );
     committedEl.innerHTML = "";
     ultimaFechaRenderizada = null;
-    localRows.forEach((r) => {
+    fechaMasAntigua = null;
+    localHoy.forEach((r) => {
       agregarMensaje(r.color || "#000", r.mensaje, r.id, r.fecha);
     });
+    if (localHoy.length) fechaMasAntigua = hoy;
+    // ¿Hay historia anterior en caché?
+    const hayAntes = localRows.some((r) => (r.fecha || "").slice(0, 10) < hoy);
+    hasMasHistoria = hayAntes;
     setStatus("cargando desde caché...", "#888");
   }
 
   try {
     const res = await fetch(
       SUPABASE_URL +
-        "/rest/v1/notas?select=id,mensaje,color,fecha&order=id.asc",
+        "/rest/v1/notas?select=id,mensaje,color,fecha&fecha=eq." +
+        hoy +
+        "&order=id.asc",
       {
         headers: {
           apikey: SUPABASE_KEY,
@@ -473,14 +683,40 @@ async function cargar() {
     );
     if (res.ok) {
       const rows = await res.json();
-      if (!localRows.length) {
-        committedEl.innerHTML = "";
-        ultimaFechaRenderizada = null;
-      }
+      committedEl.innerHTML = "";
+      ultimaFechaRenderizada = null;
+      fechaMasAntigua = null;
+      renderedMessageIds.clear();
       rows.forEach((r) => {
         agregarMensaje(r.color || "#000", r.mensaje, r.id, r.fecha);
       });
-      saveLocalMessages(rows);
+      if (rows.length) fechaMasAntigua = hoy;
+
+      // Actualizar caché: reemplazar los de hoy y conservar el resto
+      const sinHoy = localRows.filter(
+        (r) => (r.fecha || "").slice(0, 10) !== hoy,
+      );
+      saveLocalMessages([...sinHoy, ...rows]);
+
+      // Verificar si hay historia anterior en Supabase
+      const resPrev = await fetch(
+        SUPABASE_URL +
+          "/rest/v1/notas?select=fecha&fecha=lt." +
+          hoy +
+          "&order=fecha.desc&limit=1",
+        {
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: "Bearer " + SUPABASE_KEY,
+          },
+        },
+      );
+      if (resPrev.ok) {
+        const prevRows = await resPrev.json();
+        hasMasHistoria = prevRows.length > 0;
+        if (hasMasHistoria && !fechaMasAntigua) fechaMasAntigua = hoy;
+      }
+
       setStatus("", "");
       requestAnimationFrame(() => {
         window.scrollTo({
@@ -495,13 +731,21 @@ async function cargar() {
     }
   } catch (e) {
     console.error(e);
-    const localRows = loadLocalMessages();
+    // Offline: mostrar caché de hoy
     if (localRows.length > 0) {
+      const localHoy = localRows.filter(
+        (r) => (r.fecha || "").slice(0, 10) === hoy,
+      );
       committedEl.innerHTML = "";
       ultimaFechaRenderizada = null;
-      localRows.forEach((r) => {
+      fechaMasAntigua = null;
+      localHoy.forEach((r) => {
         agregarMensaje(r.color || "#000", r.mensaje, r.id, r.fecha);
       });
+      if (localHoy.length) fechaMasAntigua = hoy;
+      hasMasHistoria = localRows.some(
+        (r) => (r.fecha || "").slice(0, 10) < hoy,
+      );
       setStatus("Offline. Mostrando caché local.", "#e53935");
     } else {
       setStatus("✗ sin conexión. No hay datos locales.", "#e53935");

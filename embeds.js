@@ -472,6 +472,41 @@ export function openEmbed(embedInfo, url) {
   }
 }
 
+// Parsea marcas de formato inline: **negrita**, *cursiva*, __subrayado__
+// Devuelve un array de nodos DOM
+function parsearFormato(texto) {
+  // Orden importa: ** antes de * para no confundirlos
+  const TOKEN_RE = /(\*\*[\s\S]+?\*\*|\*[\s\S]+?\*|__[\s\S]+?__)/g;
+  const partes = texto.split(TOKEN_RE);
+  const nodos = [];
+  for (const parte of partes) {
+    if (parte.startsWith("**") && parte.endsWith("**") && parte.length > 4) {
+      const el = document.createElement("strong");
+      el.textContent = parte.slice(2, -2);
+      nodos.push(el);
+    } else if (
+      parte.startsWith("__") &&
+      parte.endsWith("__") &&
+      parte.length > 4
+    ) {
+      const el = document.createElement("u");
+      el.textContent = parte.slice(2, -2);
+      nodos.push(el);
+    } else if (
+      parte.startsWith("*") &&
+      parte.endsWith("*") &&
+      parte.length > 2
+    ) {
+      const el = document.createElement("em");
+      el.textContent = parte.slice(1, -1);
+      nodos.push(el);
+    } else {
+      nodos.push(document.createTextNode(parte));
+    }
+  }
+  return nodos;
+}
+
 export function renderConLinks(container, texto) {
   const partes = texto.split(URL_REGEX);
   partes.forEach((parte) => {
@@ -492,9 +527,13 @@ export function renderConLinks(container, texto) {
       }
       container.appendChild(a);
     } else {
+      // Partir por líneas primero, luego parsear formato en cada una
       const lineas = parte.split("\n");
       lineas.forEach((linea, idx) => {
-        if (linea) container.appendChild(document.createTextNode(linea));
+        if (linea) {
+          const nodos = parsearFormato(linea);
+          nodos.forEach((n) => container.appendChild(n));
+        }
         if (idx < lineas.length - 1)
           container.appendChild(document.createElement("br"));
       });
