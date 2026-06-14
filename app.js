@@ -642,7 +642,9 @@ function estaAlFinal() {
 }
 
 function fechaHoy() {
-  return new Date().toISOString().slice(0, 10);
+  return new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  });
 }
 
 async function cargar() {
