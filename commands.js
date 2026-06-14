@@ -13,6 +13,7 @@ export const COMANDOS = {
   "/girar": null,
   "/brunomunari": null,
   "/pajarosvolando": null,
+  "/penales": null,
 };
 
 // ========================
@@ -462,6 +463,494 @@ function pajarosVolando() {
 }
 
 // ========================
+// /penales
+// ========================
+
+function superPenales86() {
+  // Cancelar animaciones previas del canvas
+  if (btnCanvas._munariAnimId) {
+    cancelAnimationFrame(btnCanvas._munariAnimId);
+    btnCanvas._munariAnimId = null;
+  }
+  if (btnCanvas._munariCleanup) {
+    btnCanvas._munariCleanup();
+    btnCanvas._munariCleanup = null;
+  }
+  if (btnCanvas._penalesAnimId) {
+    cancelAnimationFrame(btnCanvas._penalesAnimId);
+    btnCanvas._penalesAnimId = null;
+  }
+
+  const cx = ctx;
+  const S = btnCanvas.width; // tamaño real del canvas (px)
+
+  // ── Paleta ──
+  const SKY = "#1a1a3e";
+  const GRASS = "#2d8a3e";
+  const GRASS_DARK = "#256e32";
+  const GOAL_WHITE = "#ffffff";
+  const GOAL_SHADOW = "#cfcfcf";
+  const NET = "rgba(255,255,255,0.35)";
+  const BALL_WHITE = "#ffffff";
+  const BALL_BLACK = "#222222";
+  const KEEPER_SHIRT = "#ff2e63";
+  const KEEPER_SKIN = "#f2c29a";
+  const KEEPER_SHORTS = "#1a1330";
+  const SCANLINE = "rgba(0,0,0,0.12)";
+
+  // ── Estado ──
+  const W = S,
+    H = S;
+  let score = 0;
+  let shotNum = 1;
+  const MAX_SHOTS = 5;
+  let canShoot = true;
+  let results = [];
+  let gameOver = false;
+
+  // ── Geometría ──
+  // Ajustada al canvas cuadrado pequeño
+  const goal = { x: W * 0.09, y: H * 0.18, w: W * 0.82, h: H * 0.3 };
+  const ballStart = { x: W / 2, y: H * 0.87 };
+  let ball = { x: ballStart.x, y: ballStart.y, r: W * 0.04 };
+
+  const KEEPER_HOME_X = W / 2;
+  const KEEPER_HOME_Y = goal.y + goal.h - H * 0.06;
+  const KW = W * 0.14,
+    KH = H * 0.18;
+  let keeper = {
+    x: KEEPER_HOME_X,
+    y: KEEPER_HOME_Y,
+    w: KW,
+    h: KH,
+    diving: false,
+    diveProgress: 0,
+    startX: KEEPER_HOME_X,
+    startY: KEEPER_HOME_Y,
+    endX: KEEPER_HOME_X,
+    endY: KEEPER_HOME_Y,
+    diveDir: 0,
+    reaching: false,
+  };
+
+  // ── Zonas 3×2 ──
+  function getZones() {
+    const cols = 3,
+      rows = 2;
+    const zw = goal.w / cols,
+      zh = goal.h / rows;
+    return Array.from({ length: rows * cols }, (_, i) => {
+      const r = Math.floor(i / cols),
+        c = i % cols;
+      return {
+        x: goal.x + c * zw,
+        y: goal.y + r * zh,
+        w: zw,
+        h: zh,
+        col: c,
+        row: r,
+      };
+    });
+  }
+  const ZONES = getZones();
+
+  function zoneAt(px, py) {
+    return (
+      ZONES.find(
+        (z) => px >= z.x && px < z.x + z.w && py >= z.y && py < z.y + z.h,
+      ) || null
+    );
+  }
+
+  // ── Helpers de dibujo ──
+  function rect(x, y, w, h, color) {
+    cx.fillStyle = color;
+    cx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+  }
+
+  function drawField() {
+    rect(0, 0, W, goal.y + goal.h + H * 0.07, SKY);
+    // estrellas
+    cx.fillStyle = "#ffe93b";
+    for (let i = 0; i < 10; i++) {
+      const sx = (i * 47) % W,
+        sy = (i * 23) % (goal.y - 2);
+      cx.fillRect(sx, sy, 1, 1);
+    }
+    rect(
+      0,
+      goal.y + goal.h + H * 0.07,
+      W,
+      H - (goal.y + goal.h + H * 0.07),
+      GRASS,
+    );
+    for (let i = 0; i < 8; i++) {
+      if (i % 2 === 0)
+        rect(
+          i * (W / 8),
+          goal.y + goal.h + H * 0.07,
+          W / 8,
+          H - (goal.y + goal.h + H * 0.07),
+          GRASS_DARK,
+        );
+    }
+    // punto de penal
+    rect(W / 2 - 1, ballStart.y + 3, 2, 2, "#ffffff");
+  }
+
+  function drawGoal() {
+    const postW = Math.max(2, W * 0.02);
+    cx.strokeStyle = NET;
+    cx.lineWidth = 0.5;
+    for (let i = -goal.h; i < goal.w; i += 6) {
+      cx.beginPath();
+      cx.moveTo(goal.x + i, goal.y);
+      cx.lineTo(goal.x + i + goal.h, goal.y + goal.h);
+      cx.stroke();
+    }
+    for (let i = 0; i < goal.w + goal.h; i += 6) {
+      cx.beginPath();
+      cx.moveTo(goal.x + i, goal.y);
+      cx.lineTo(goal.x + i - goal.h, goal.y + goal.h);
+      cx.stroke();
+    }
+    // postes (sombra y blanco)
+    rect(goal.x - postW, goal.y - postW, postW, goal.h + postW, GOAL_SHADOW);
+    rect(goal.x, goal.y - postW, goal.w, postW, GOAL_SHADOW);
+    rect(goal.x + goal.w, goal.y - postW, postW, goal.h + postW, GOAL_SHADOW);
+    rect(
+      goal.x - postW,
+      goal.y - postW * 1.5,
+      postW + goal.w + postW,
+      postW,
+      GOAL_WHITE,
+    );
+    rect(
+      goal.x - postW,
+      goal.y - postW * 1.5,
+      postW,
+      goal.h + postW * 1.5,
+      GOAL_WHITE,
+    );
+    rect(
+      goal.x + goal.w,
+      goal.y - postW * 1.5,
+      postW,
+      goal.h + postW * 1.5,
+      GOAL_WHITE,
+    );
+  }
+
+  function drawKeeper() {
+    const w = keeper.w,
+      h = keeper.h;
+    let kx = keeper.startX,
+      ky = keeper.startY,
+      rotate = 0;
+    if (keeper.diving) {
+      const p = keeper.diveProgress;
+      kx = keeper.startX + (keeper.endX - keeper.startX) * p;
+      ky = keeper.startY + (keeper.endY - keeper.startY) * p;
+      rotate = keeper.diveDir * p * 0.9;
+    }
+    cx.save();
+    cx.translate(kx, ky);
+    cx.rotate(rotate);
+    rect(-w / 2, h * 0.18, w, h * 0.47, KEEPER_SHORTS);
+    rect(-w / 2, -h / 2, w, h / 2 + h * 0.18, KEEPER_SHIRT);
+    const p2 = keeper.diving ? keeper.diveProgress : 0;
+    if (keeper.reaching) {
+      const armH = h * 0.24 + p2 * h * 0.35;
+      rect(
+        -w / 2 - w * 0.08,
+        -h / 2 - armH,
+        w * 0.23,
+        armH + h * 0.12,
+        KEEPER_SHIRT,
+      );
+      rect(
+        w / 2 - w * 0.15,
+        -h / 2 - armH,
+        w * 0.23,
+        armH + h * 0.12,
+        KEEPER_SHIRT,
+      );
+    } else if (keeper.diving) {
+      rect(
+        -w / 2 - w * 0.38,
+        -h / 2 - h * 0.12,
+        w * 0.38,
+        h * 0.24,
+        KEEPER_SHIRT,
+      );
+      rect(w / 2, -h / 2 - h * 0.12, w * 0.38, h * 0.24, KEEPER_SHIRT);
+    } else {
+      rect(
+        -w / 2 - w * 0.23,
+        -h / 2 + h * 0.06,
+        w * 0.23,
+        h * 0.41,
+        KEEPER_SHIRT,
+      );
+      rect(w / 2, -h / 2 + h * 0.06, w * 0.23, h * 0.41, KEEPER_SHIRT);
+    }
+    // cabeza
+    rect(-w * 0.27, -h / 2 - h * 0.35, w * 0.54, h * 0.35, KEEPER_SKIN);
+    rect(-w * 0.27, -h / 2 - h * 0.41, w * 0.54, h * 0.12, "#222222");
+    // pies
+    rect(-w / 2 + w * 0.08, h / 2 - h * 0.24, w * 0.3, h * 0.35, KEEPER_SKIN);
+    rect(w / 2 - w * 0.38, h / 2 - h * 0.24, w * 0.3, h * 0.35, KEEPER_SKIN);
+    cx.restore();
+  }
+
+  function drawBall() {
+    cx.save();
+    cx.translate(ball.x, ball.y);
+    cx.fillStyle = "rgba(0,0,0,0.25)";
+    cx.beginPath();
+    cx.ellipse(0, ball.r + 1, ball.r * 1.1, ball.r * 0.4, 0, 0, Math.PI * 2);
+    cx.fill();
+    cx.fillStyle = BALL_WHITE;
+    cx.beginPath();
+    cx.arc(0, 0, ball.r, 0, Math.PI * 2);
+    cx.fill();
+    cx.fillStyle = BALL_BLACK;
+    cx.beginPath();
+    cx.arc(-ball.r * 0.17, -ball.r * 0.17, ball.r * 0.27, 0, Math.PI * 2);
+    cx.fill();
+    cx.beginPath();
+    cx.arc(ball.r * 0.33, ball.r * 0.33, ball.r * 0.2, 0, Math.PI * 2);
+    cx.fill();
+    cx.restore();
+  }
+
+  function drawScanlines() {
+    cx.fillStyle = SCANLINE;
+    for (let y = 0; y < H; y += 3) cx.fillRect(0, y, W, 1);
+  }
+
+  // ── Marcador compacto en la parte superior ──
+  function drawScore() {
+    const px = Math.round(W * 0.09);
+    const gap = Math.round(W * 0.03);
+    const totalW = MAX_SHOTS * px + (MAX_SHOTS - 1) * gap;
+    const startX = Math.round((W - totalW) / 2);
+    const startY = Math.round(H * 0.02);
+    for (let i = 0; i < MAX_SHOTS; i++) {
+      const x = startX + i * (px + gap);
+      cx.fillStyle =
+        i < results.length
+          ? results[i] === "gol"
+            ? "#39ff14"
+            : "#ff2e63"
+          : "#2a2040";
+      cx.fillRect(x, startY, px, px);
+      // borde
+      cx.fillStyle =
+        i < results.length
+          ? results[i] === "gol"
+            ? "#1a7a00"
+            : "#8a0020"
+          : "#4ecdc4";
+      cx.fillRect(x, startY, px, 1);
+      cx.fillRect(x, startY, 1, px);
+      cx.fillRect(x + px - 1, startY, 1, px);
+      cx.fillRect(x, startY + px - 1, px, 1);
+    }
+  }
+
+  function render() {
+    drawField();
+    drawGoal();
+    drawKeeper();
+    drawBall();
+    drawScanlines();
+    drawScore();
+  }
+
+  // ── Lógica de disparo ──
+  function animateShot(targetZone) {
+    canShoot = false;
+    const ballTarget = {
+      x: targetZone.x + targetZone.w / 2,
+      y: targetZone.y + targetZone.h / 2,
+    };
+    const startX = ball.x,
+      startY = ball.y;
+    const duration = 500;
+    const startTime = performance.now();
+
+    const diveZone = ZONES[Math.floor(Math.random() * ZONES.length)];
+    keeper.startX = KEEPER_HOME_X;
+    keeper.startY = KEEPER_HOME_Y;
+
+    if (diveZone.col === 1) {
+      keeper.endX = KEEPER_HOME_X;
+      if (targetZone.row === 0) {
+        keeper.endY = Math.max(goal.y + diveZone.h / 2, goal.y + H * 0.05);
+        keeper.reaching = true;
+      } else {
+        keeper.endY = KEEPER_HOME_Y;
+        keeper.reaching = false;
+      }
+    } else {
+      keeper.endX = diveZone.x + diveZone.w / 2;
+      keeper.endY =
+        diveZone.row === 0
+          ? Math.max(diveZone.y + diveZone.h / 2, goal.y + H * 0.05)
+          : KEEPER_HOME_Y;
+      keeper.reaching = false;
+    }
+
+    keeper.diving = true;
+    keeper.diveDir = diveZone.col < 1 ? -1 : diveZone.col > 1 ? 1 : 0;
+    keeper.diveProgress = 0;
+
+    function step(now) {
+      const t = Math.min((now - startTime) / duration, 1);
+      const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      ball.x = startX + (ballTarget.x - startX) * ease;
+      ball.y = startY + (ballTarget.y - startY) * ease;
+      keeper.diveProgress = Math.min(t * 1.25, 1);
+      render();
+      if (t < 1) {
+        btnCanvas._penalesAnimId = requestAnimationFrame(step);
+      } else {
+        resolveShot(diveZone);
+      }
+    }
+    btnCanvas._penalesAnimId = requestAnimationFrame(step);
+  }
+
+  function resolveShot(diveZone) {
+    const reach = KW * 0.4;
+    const upReach = keeper.reaching ? KH * 0.6 : KH * 0.18;
+    const kRect = {
+      x: keeper.endX - KW / 2 - reach,
+      y: keeper.endY - KH / 2 - upReach,
+      w: KW + reach * 2,
+      h: KH + upReach,
+    };
+    const bRect = {
+      x: ball.x - ball.r,
+      y: ball.y - ball.r,
+      w: ball.r * 2,
+      h: ball.r * 2,
+    };
+    const saved =
+      bRect.x < kRect.x + kRect.w &&
+      bRect.x + bRect.w > kRect.x &&
+      bRect.y < kRect.y + kRect.h &&
+      bRect.y + bRect.h > kRect.y;
+
+    results.push(saved ? "atajada" : "gol");
+    if (!saved) score++;
+    render();
+    setTimeout(nextShot, 1000);
+  }
+
+  function nextShot() {
+    shotNum++;
+    if (shotNum > MAX_SHOTS) {
+      endGame();
+      return;
+    }
+    resetBallAndKeeper();
+  }
+
+  function resetBallAndKeeper() {
+    ball.x = ballStart.x;
+    ball.y = ballStart.y;
+    Object.assign(keeper, {
+      startX: KEEPER_HOME_X,
+      startY: KEEPER_HOME_Y,
+      endX: KEEPER_HOME_X,
+      endY: KEEPER_HOME_Y,
+      diving: false,
+      diveProgress: 0,
+      diveDir: 0,
+      reaching: false,
+    });
+    canShoot = true;
+    render();
+  }
+
+  function endGame() {
+    gameOver = true;
+    // Pantalla de resultado breve
+    const won = score >= 3;
+    setTimeout(() => {
+      // Mostrar resultado encima del campo
+      render();
+      cx.fillStyle = "rgba(15,10,30,0.72)";
+      cx.fillRect(0, H * 0.3, W, H * 0.38);
+      cx.fillStyle = won ? "#39ff14" : "#ff2e63";
+      cx.font = `bold ${Math.round(W * 0.13)}px "Courier New", monospace`;
+      cx.textAlign = "center";
+      cx.textBaseline = "middle";
+      cx.fillText(won ? "Ganaste!" : "Perdiste!", W / 2, H * 0.44);
+      cx.fillStyle = "#ffe93b";
+      cx.font = `${Math.round(W * 0.09)}px "Courier New", monospace`;
+      cx.fillText(`${score}/${MAX_SHOTS}`, W / 2, H * 0.58);
+    }, 100);
+
+    // Después de 2.5 segundos, volver a la imagen normal
+    setTimeout(() => {
+      btnCanvas._penalesAnimId = null;
+      gameOver = false;
+      // Limpiar listeners
+      btnCanvas.removeEventListener("click", handleClick);
+      btnCanvas.removeEventListener("touchend", handleTouch);
+      // Restaurar imagen del canvas
+      import("./canvas-button.js").then(({ setCanvasImage }) => {
+        setCanvasImage(false);
+      });
+    }, 2500);
+  }
+
+  // ── Input: clic / tap sobre el canvas del botón ──
+  function getCoordsFromEvent(e) {
+    const r = btnCanvas.getBoundingClientRect();
+    const scaleX = S / r.width,
+      scaleY = S / r.height;
+    if (e.touches || e.changedTouches) {
+      const t = e.touches[0] || e.changedTouches[0];
+      return {
+        x: (t.clientX - r.left) * scaleX,
+        y: (t.clientY - r.top) * scaleY,
+      };
+    }
+    return {
+      x: (e.clientX - r.left) * scaleX,
+      y: (e.clientY - r.top) * scaleY,
+    };
+  }
+
+  function handleClick(e) {
+    if (!canShoot || gameOver) return;
+    e.stopPropagation(); // no guardar mensaje
+    const { x, y } = getCoordsFromEvent(e);
+    const zone = zoneAt(x, y);
+    if (zone) animateShot(zone);
+  }
+
+  function handleTouch(e) {
+    if (!canShoot || gameOver) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const { x, y } = getCoordsFromEvent(e);
+    const zone = zoneAt(x, y);
+    if (zone) animateShot(zone);
+  }
+
+  btnCanvas.addEventListener("click", handleClick);
+  btnCanvas.addEventListener("touchend", handleTouch, { passive: false });
+
+  // Arrancar
+  render();
+}
+
+// ========================
 // HINTS
 // ========================
 
@@ -564,6 +1053,8 @@ export function ejecutarComando(mensajeLimpio) {
     mostrarBrunoMunari();
   } else if (mensajeLimpio === "/pajarosvolando") {
     pajarosVolando();
+  } else if (mensajeLimpio === "/penales") {
+    superPenales86();
   } else if (COMANDOS[mensajeLimpio]) {
     mostrarHintPersonalizado(COMANDOS[mensajeLimpio]);
   }
