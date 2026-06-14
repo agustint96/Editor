@@ -382,7 +382,9 @@ const renderedMessageIds = new Set();
 
 async function guardar(mensaje) {
   const now = new Date();
-  const fecha = now.toISOString().slice(0, 10);
+  const fecha = now.toLocaleDateString("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  });
   const hora = now.toTimeString().slice(0, 8);
 
   try {
